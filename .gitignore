@@ -1,0 +1,42 @@
+# Dependencias
+node_modules/
+
+# Builds
+frontend/dist/
+frontend/dist-ssr/
+backend/dist/
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sw?
+
+# Logs de paquetes y gestores
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Bases de datos locales
+*.db
+*.db-journal
+*.sqlite
+
+# Testing y Cobertura
+coverage/
+.nyc_output/
