@@ -1,0 +1,16 @@
+name = "backend-dev"
+main = "dist/index.js"
+compatibility_date = "2026-01-01"
+
+# 🔑 Compatibilidad con módulos nativos de Node.js (path, events, util, fs, etc.)
+compatibility_flags = [ "nodejs_compat" ]
+
+# Configuración del empaquetador para resolver módulos CJS/ESM
+[build]
+command = "pnpm run build"
+
+# 🌐 Variables de entorno de Runtime (Texto plano)
+[vars]
+ENVIRONMENT = "development"
+ALLOWED_ORIGINS = "http://localhost:5173" # Luego añades aquí la URL de Cloudflare Pages separada por coma
+R2_BUCKET_NAME = "assets"
