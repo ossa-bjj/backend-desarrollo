@@ -64,7 +64,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // --- SERVIDOR (solo en local; en Vercel el handler se invoca sin listen) ---
 const PORT = Number(process.env.PORT) || 3000;
 
-if (require.main === module) {
+if (typeof require !== 'undefined' && require.main === module) {
   connectDB()
     .then(() => {
       app.listen(PORT, () => {
