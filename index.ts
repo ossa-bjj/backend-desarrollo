@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import serverless from 'serverless-http';
 import connectDB from './src/shared/db';
 import userRouter from './src/users/auth.routes';
 import productoRouter from './src/products/producto.routes';
@@ -61,7 +62,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Error interno del servidor' });
 });
 
-// --- SERVIDOR (solo en local; en Vercel el handler se invoca sin listen) ---
+// --- SERVIDOR (solo en local) ---
 const PORT = Number(process.env.PORT) || 3000;
 
 if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.main === module) {
@@ -77,4 +78,10 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.m
     });
 }
 
-export default app;
+const handler = serverless(app);
+
+export default {
+  async fetch(request: any, env: any) {
+    return handler(request, env) as unknown as Response;
+  }
+};
