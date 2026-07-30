@@ -29,15 +29,58 @@ backend/
 └── wrangler.toml         # Configuración de despliegue en Cloudflare Workers
 ```
 
+## 💻 Guía de Configuración Local para el Equipo
+
+Sigue estos pasos para configurar y trabajar en el proyecto en tu máquina local:
+
+### 1. Clonar e Instalar Dependencias
+```bash
+git clone https://github.com/ossa-bjj/backend.git
+cd backend
+
+# Instalar pnpm de forma global (si no lo tienes aún)
+npm install -g pnpm
+
+# Instalar las dependencias del proyecto
+pnpm install
+```
+
+### 2. Configurar Variables de Entorno
+Crea un archivo `.env` en la raíz basado en `.env.example`:
+```bash
+cp .env.example .env
+```
+Completa las credenciales de MongoDB, Cloudinary y JWT correspondientes.
+
+### 3. Levantar el Servidor de Desarrollo
+```bash
+pnpm dev
+```
+El servidor de Express se levantará localmente en `http://localhost:3000`.
+
+---
+
+## ⚡ Flujo de Despliegue Automático (CI / CD)
+
+> 🚀 **DESPLIEGUE AUTOMÁTICO AL HACER PUSH**:
+> **No necesitas desplegar manualmente**. 
+> 
+> Cada vez que tú o cualquier compañero haga un `git push origin main`:
+> 1. Cloudflare detecta el commit automáticamente en GitHub.
+> 2. Ejecuta la compilación de TypeScript (`pnpm run build`).
+> 3. **Despliega automáticamente el backend** a producción en `https://backend.artosalas24.workers.dev` en unos 15-20 segundos.
+
+---
+
 ## 🛠️ Comandos Disponibles
 
-> ⚠️ **IMPORTANTE**: Usa siempre `pnpm` en lugar de `npm` para instalar dependencias y evitar desincronizaciones del archivo `pnpm-lock.yaml`.
+> ⚠️ **REGLA DE ORO DEL EQUIPO**: Usa siempre `pnpm` (no `npm`) para agregar o actualizar paquetes y evitar desincronizaciones de `pnpm-lock.yaml`.
 
 ```bash
 # Instalar dependencias
 pnpm install
 
-# Instalar nueva dependencia (ejemplo)
+# Instalar una nueva dependencia (ejemplo)
 pnpm add <nombre-paquete>
 pnpm add -D <nombre-paquete>
 
@@ -47,10 +90,10 @@ pnpm dev
 # Compilar TypeScript a JavaScript
 pnpm build
 
-# Probar compilación para Cloudflare Workers sin desplegar
+# Probar la compilación de Cloudflare Workers sin desplegar
 npx wrangler deploy --dry-run
 
-# Desplegar manualmente a Cloudflare Workers
+# Desplegar manualmente a Cloudflare Workers (Opcional, en caso de emergencia)
 npx wrangler deploy
 ```
 
