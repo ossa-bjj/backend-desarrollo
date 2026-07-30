@@ -14,19 +14,36 @@ const app = express();
 app.use(express.json());
 
 // --- CORS ---
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') ?? ['http://localhost:5173'];
-
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+
+    const originsEnv = process.env.ALLOWED_ORIGINS || '';
+    const configuredOrigins = originsEnv
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+
+    const allowedList = configuredOrigins.length > 0
+      ? configuredOrigins
+      : ['http://localhost:5173', 'http://localhost:3000'];
+
+    const isAllowed =
+      allowedList.includes('*') ||
+      allowedList.includes(origin) ||
+      origin.endsWith('.pages.dev') ||
+      origin.endsWith('.workers.dev');
+
+    if (isAllowed) {
       callback(null, true);
     } else {
+      console.warn(`CORS bloqueado para el origen: ${origin}`);
       callback(new Error(`CORS: origen no permitido → ${origin}`));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
 }));
 
 // --- CONEXION A DB (lazy, cacheada entre invocaciones serverless) ---
@@ -81,7 +98,11 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.m
 const handler = serverless(app);
 
 export default {
-  async fetch(request: any, env: any) {
+  async fetch(request: any, env: any, ctx?: any) {
+    if (env && typeof env === 'object') {
+      Object.assign(process.env, env);
+    }
     return handler(request, env) as unknown as Response;
   }
 };
+

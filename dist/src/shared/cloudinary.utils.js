@@ -1,6 +1,6 @@
-const cloudinary = require("cloudinary").v2;
+import { v2 as cloudinary } from 'cloudinary';
 // --- Eliminar Imagen ---
-const deleteImgCloudinary = async (publicID) => {
+export const deleteImgCloudinary = async (publicID) => {
     if (!publicID)
         return;
     try {
@@ -12,7 +12,7 @@ const deleteImgCloudinary = async (publicID) => {
     }
 };
 // --- Subir Imagen ---
-const createImgBook = async (filePath) => {
+export const createImgBook = async (filePath) => {
     try {
         const result = await cloudinary.uploader.upload(filePath, {
             folder: "libreria", // Carpeta en Cloudinary
@@ -28,9 +28,3 @@ const createImgBook = async (filePath) => {
         throw error;
     }
 };
-// Exportamos las funciones
-module.exports = {
-    deleteImgCloudinary,
-    createImgBook,
-};
-export {};

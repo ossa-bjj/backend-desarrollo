@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getProductos, getProductoById, crearProducto, updateProducto, deleteProducto, searchProductos, getProductosByCategoria, getProductosByMarca, updateStock, getProductosDestacados, addImagenes, removeImagen, } from './producto.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
-const upload = require('../shared/file.middleware');
+import upload from '../shared/file.middleware';
 const router = Router();
 // --- RUTAS PÚBLICAS ---
 router.get('/', getProductos);
