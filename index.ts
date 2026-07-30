@@ -2,7 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import serverless from 'serverless-http';
+import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import connectDB from './src/shared/db';
 import userRouter from './src/users/auth.routes';
 import productoRouter from './src/products/producto.routes';
@@ -51,9 +52,12 @@ app.use(async (_req, res, next) => {
   try {
     await connectDB();
     next();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error de conexion a la DB:', error);
-    res.status(503).json({ error: 'Servicio no disponible: fallo de conexion a la base de datos' });
+    res.status(503).json({
+      error: 'Servicio no disponible: fallo de conexion a la base de datos',
+      details: error?.message || String(error),
+    });
   }
 });
 
@@ -95,14 +99,113 @@ if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.m
     });
 }
 
-const handler = serverless(app);
+// --- ADAPTADOR FETCH API -> EXPRESS PARA CLOUDFLARE WORKERS ---
+async function handleFetch(expressApp: express.Express, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+
+  const reqStream = new Readable() as any;
+  reqStream._read = () => {};
+
+  reqStream.method = request.method;
+  reqStream.url = url.pathname + url.search;
+  reqStream.headers = {};
+  request.headers.forEach((value, key) => {
+    reqStream.headers[key.toLowerCase()] = value;
+  });
+  reqStream.rawHeaders = Array.from(request.headers.entries()).flat();
+  reqStream.socket = new EventEmitter();
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const bodyBuffer = Buffer.from(await request.arrayBuffer());
+    reqStream.push(bodyBuffer);
+  }
+  reqStream.push(null);
+
+  return new Promise<Response>((resolve, reject) => {
+    const resHeaders = new Headers();
+    let statusCode = 200;
+    const chunks: Buffer[] = [];
+
+    const resStream = new EventEmitter() as any;
+    resStream.headersSent = false;
+    resStream.statusCode = 200;
+
+    resStream.setHeader = (name: string, value: any) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => resHeaders.append(name, String(v)));
+      } else {
+        resHeaders.set(name, String(value));
+      }
+    };
+
+    resStream.getHeader = (name: string) => resHeaders.get(name);
+    resStream.removeHeader = (name: string) => resHeaders.delete(name);
+
+    resStream.writeHead = (code: number, headers?: any) => {
+      statusCode = code;
+      if (headers) {
+        Object.entries(headers).forEach(([k, v]) => {
+          if (Array.isArray(v)) {
+            v.forEach((val) => resHeaders.append(k, String(val)));
+          } else {
+            resHeaders.set(k, String(v));
+          }
+        });
+      }
+      resStream.headersSent = true;
+    };
+
+    resStream.write = (chunk: any) => {
+      if (chunk) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return true;
+    };
+
+    resStream.end = (chunk?: any) => {
+      if (chunk) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      if (resStream.statusCode) statusCode = resStream.statusCode;
+      const responseBody = Buffer.concat(chunks);
+      resolve(
+        new Response(responseBody, {
+          status: statusCode,
+          headers: resHeaders,
+        }),
+      );
+    };
+
+    resStream.on = (_event: string, _listener: any) => {};
+
+    try {
+      expressApp(reqStream, resStream);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
 
 export default {
-  async fetch(request: any, env: any, ctx?: any) {
-    if (env && typeof env === 'object') {
-      Object.assign(process.env, env);
+  async fetch(request: Request, env: any): Promise<Response> {
+    try {
+      if (env && typeof env === 'object') {
+        Object.assign(process.env, env);
+      }
+      return await handleFetch(app, request);
+    } catch (err: any) {
+      console.error('Error no capturado en Cloudflare Worker:', err);
+      return new Response(
+        JSON.stringify({
+          error: 'Error interno en Cloudflare Worker',
+          message: err?.message || String(err),
+          stack: err?.stack || null,
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
     }
-    return handler(request, env) as unknown as Response;
-  }
+  },
 };
-

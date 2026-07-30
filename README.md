@@ -107,20 +107,28 @@ El backend está adaptado para ejecutarse en la infraestructura de V8 Isolates d
   `tsconfig.json` está configurado con `"module": "ESNext"` y `"moduleResolution": "bundler"`. Cloudflare Workers requiere sintaxis ESM nativa (`import` / `export`).
 * **Compatibilidad con Node.js (`nodejs_compat`)**:
   En `wrangler.toml` está activa la bandera `compatibility_flags = ["nodejs_compat"]`, lo que permite el uso de módulos nativos de Node.js (`crypto`, `events`, `buffer`, `fs`, `path`, `stream`, etc.) y librerías como Mongoose, Bcryptjs y Cloudinary.
-* **Manejador `fetch` con `serverless-http`**:
-  Cloudflare Workers no ejecuta `app.listen()`. Las peticiones HTTP entrantes son recibidas por la función `fetch(request, env)`. Usamos `serverless-http` en `index.ts` para adaptar la aplicación Express a las peticiones del Worker:
+* **Manejador `fetch` nativo (Adaptador Fetch API -> Express)**:
+  Cloudflare Workers no ejecuta `app.listen()` ni es compatible con `serverless-http` (diseñado para eventos de AWS Lambda). Usamos un adaptador nativo Fetch API -> Express en `index.ts` que transforma las peticiones `Request` estándar a streams HTTP de Express y devuelve respuestas `Response`:
   ```typescript
-  import serverless from 'serverless-http';
-  const handler = serverless(app);
-
   export default {
-    async fetch(request: any, env: any) {
-      return handler(request, env) as unknown as Response;
+    async fetch(request: Request, env: any): Promise<Response> {
+      try {
+        if (env && typeof env === 'object') {
+          Object.assign(process.env, env);
+        }
+        return await handleFetch(app, request);
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: 'Worker Error', message: err.message }), { status: 500 });
+      }
     }
   };
   ```
+* **Paso de Variables de Entorno de Cloudflare (`env`)**:
+  En cada petición entrante, el objeto `env` proporcionado por Cloudflare se inyecta dinámicamente en `process.env`, garantizando acceso inmediato a `DB_URL`, `JWT_SECRET` y `ALLOWED_ORIGINS`.
+* **CORS Dinámico**:
+  Middleware de CORS en `index.ts` configurado para resolver `ALLOWED_ORIGINS` en cada petición y dar soporte al origen del frontend local (`http://localhost:5173`) y despliegues en Cloudflare Pages (`*.pages.dev`).
 * **Importaciones estrictas ESM**:
-  Toda la aplicación utiliza exclusivamente `import` y `export default`. Se eliminaron llamadas a `require()` o `module.exports` para prevenir errores de interoperabilidad (`TypeError: upload.array is not a function`).
+  Toda la aplicación utiliza exclusivamente `import` y `export default`. Se eliminaron llamadas a `require()` o `module.exports` para prevenir errores de interoperabilidad.
 * **Guarda para ejecución local**:
   La inicialización del servidor local (`app.listen()`) en `index.ts` está protegida por:
   ```typescript
