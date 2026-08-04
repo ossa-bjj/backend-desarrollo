@@ -186,26 +186,6 @@ async function handleFetch(expressApp: express.Express, request: Request): Promi
   });
 }
 
-export default {
-  async fetch(request: Request, env: any): Promise<Response> {
-    try {
-      if (env && typeof env === 'object') {
-        Object.assign(process.env, env);
-      }
-      return await handleFetch(app, request);
-    } catch (err: any) {
-      console.error('Error no capturado en Cloudflare Worker:', err);
-      return new Response(
-        JSON.stringify({
-          error: 'Error interno en Cloudflare Worker',
-          message: err?.message || String(err),
-          stack: err?.stack || null,
-        }),
-        {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      );
-    }
-  },
-};
+export { app };
+export default app;
+
