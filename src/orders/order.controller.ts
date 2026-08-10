@@ -2,10 +2,7 @@ import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { Order, OrderStatus } from './order.model';
 import { UserRole } from '../users/user.model';
-
-const sendServerError = (res: Response, message: string, error: unknown): void => {
-  res.status(500).json({ error: message, detail: (error as Error).message });
-};
+import { sendServerError } from '../shared/controller.utils';
 
 const isAdmin = (req: Request): boolean => req.user?.rol === UserRole.ADMIN;
 

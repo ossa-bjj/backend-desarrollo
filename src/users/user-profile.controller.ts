@@ -1,13 +1,7 @@
 import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
-import { CustomerOrigin, User, UserRole } from './user.model';
-
-const sendServerError = (res: Response, message: string, error: unknown): void => {
-  res.status(500).json({ error: message, detail: (error as Error).message });
-};
-
-const isOwnerOrAdmin = (req: Request, userId: string | string[]): boolean =>
-  typeof userId === 'string' && (req.user?.id === userId || req.user?.rol === UserRole.ADMIN);
+import { CustomerOrigin, User } from './user.model';
+import { sendServerError, isOwnerOrAdmin } from '../shared/controller.utils';
 
 // PATCH /api/users/:id/customer
 export const updateCustomer = async (req: Request, res: Response): Promise<void> => {

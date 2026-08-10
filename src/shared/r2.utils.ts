@@ -1,6 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-// Inicializar cliente S3 compatible con Cloudflare R2
 const getR2Client = () => {
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -20,9 +19,6 @@ const getR2Client = () => {
   });
 };
 
-/**
- * Sube un buffer de imagen a Cloudflare R2
- */
 export const uploadToR2 = async (fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string> => {
   const bucketName = process.env.R2_BUCKET_NAME || "assets";
   const publicDomain = process.env.R2_PUBLIC_DOMAIN || "";
@@ -39,7 +35,6 @@ export const uploadToR2 = async (fileBuffer: Buffer, fileName: string, mimeType:
 
   await s3Client.send(command);
 
-  // Retorna la URL pública de la imagen
   if (publicDomain) {
     const cleanDomain = publicDomain.endsWith("/") ? publicDomain.slice(0, -1) : publicDomain;
     return `${cleanDomain}/${key}`;
@@ -48,9 +43,6 @@ export const uploadToR2 = async (fileBuffer: Buffer, fileName: string, mimeType:
   return key;
 };
 
-/**
- * Elimina un objeto de Cloudflare R2 por su clave (key)
- */
 export const deleteFromR2 = async (key: string): Promise<void> => {
   const bucketName = process.env.R2_BUCKET_NAME || "assets";
   const s3Client = getR2Client();

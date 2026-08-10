@@ -2,13 +2,7 @@ import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { IUser, User, UserRole, UserStatus } from './user.model';
-
-const sendServerError = (res: Response, message: string, error: unknown): void => {
-  res.status(500).json({ error: message, detail: (error as Error).message });
-};
-
-const isOwnerOrAdmin = (req: Request, userId: string | string[]): boolean =>
-  typeof userId === 'string' && (req.user?.id === userId || req.user?.rol === UserRole.ADMIN);
+import { sendServerError, isOwnerOrAdmin } from '../shared/controller.utils';
 
 // POST /api/users
 export const createUser = async (req: Request, res: Response): Promise<void> => {

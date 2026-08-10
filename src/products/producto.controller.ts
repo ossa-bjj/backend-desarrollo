@@ -1,5 +1,6 @@
 import {Request, Response, NextFunction} from 'express';
 import { ProductoModelo } from './producto.model';
+import { uploadToR2, deleteFromR2 } from '../shared/r2.utils';
 
 
 
@@ -101,14 +102,16 @@ export const deleteProducto = async (req: Request, res: Response, next: NextFunc
 export const addImagenes = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { codigoArticulo } = req.params;
-        const files = ((req as any).files ?? []) as { path: string }[];
+        const files = (req.files ?? []) as Express.Multer.File[];
 
         if (files.length === 0) {
             res.status(400).json({ error: 'No se enviaron imágenes' });
             return;
         }
 
-        const urls = files.map((f) => f.path);
+        const urls = await Promise.all(
+            files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype))
+        );
 
         const producto = await ProductoModelo.findOneAndUpdate(
             { codigoArticulo },
@@ -137,6 +140,17 @@ export const removeImagen = async (req: Request, res: Response, next: NextFuncti
             res.status(400).json({ error: 'Se requiere la URL de la imagen a eliminar' });
             return;
         }
+
+        // Extraer key de R2 desde la URL pública
+        const publicDomain = process.env.R2_PUBLIC_DOMAIN || '';
+        let key: string = url;
+        if (publicDomain) {
+            const cleanDomain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
+            if (key.startsWith(cleanDomain + '/')) {
+                key = key.slice(cleanDomain.length + 1);
+            }
+        }
+        try { await deleteFromR2(key); } catch { /* ignorar si no existe en R2 */ }
 
         const producto = await ProductoModelo.findOneAndUpdate(
             { codigoArticulo },

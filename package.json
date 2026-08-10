@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn index.ts",
     "build": "tsc",
@@ -15,18 +15,13 @@
   "packageManager": "pnpm@11.6.0",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1098.0",
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
-    "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "mongodb": "^7.3.0",
     "mongoose": "^8.24.0",
-    "multer": "^2.1.1",
-    "multer-storage-cloudinary": "^4.0.0",
-    "serverless-http": "^4.0.0"
+    "multer": "^2.1.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
@@ -35,7 +30,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^25.9.2",
-    "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^6.0.3"

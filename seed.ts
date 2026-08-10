@@ -9,12 +9,10 @@ import {
   UserStatus,
 } from './src/users/user.model';
 import { ProductoModelo, Categoria } from './src/products/producto.model';
+import { resolveDbUrl } from './src/shared/db';
 
-const DB_URL = (process.env.DB_URL ?? '')
-  .replace('$DATABASE_USER', encodeURIComponent(process.env.DATABASE_USER ?? ''))
-  .replace('$DATABASE_PASS', encodeURIComponent(process.env.DATABASE_PASS ?? ''));
-
-const IMG_DEFAULT = 'https://res.cloudinary.com/dw6qgshkz/image/upload/v1781696078/no-image-available_gwtbah.png';
+const IMG_DEFAULT = process.env.DEFAULT_IMAGE_URL
+  || `${process.env.R2_PUBLIC_DOMAIN}/uploads/no-image-available.png`;
 
 //  USUARIOS
 
@@ -628,12 +626,8 @@ const productos = [
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 async function seed() {
-  if (!DB_URL) {
-    console.error('DB_URL no definida en .env');
-    process.exit(1);
-  }
-
-  await mongoose.connect(DB_URL);
+  const dbUrl = resolveDbUrl();
+  await mongoose.connect(dbUrl);
   console.log('Conectado a MongoDB');
 
   await User.deleteMany({});

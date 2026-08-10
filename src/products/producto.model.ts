@@ -64,7 +64,7 @@ const ProductoSchema = new Schema<IProduct>(
     },
     imagenes: {
       type: [String],
-      default: ['https://res.cloudinary.com/dw6qgshkz/image/upload/v1781696078/no-image-available_gwtbah.png'],
+      default: () => [process.env.DEFAULT_IMAGE_URL || `${process.env.R2_PUBLIC_DOMAIN}/uploads/no-image-available.png`],
       required: true,
     },
     tags: {

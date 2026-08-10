@@ -1,10 +1,7 @@
 import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { MembershipPaymentStatus, MembershipStatus, User } from './user.model';
-
-const sendServerError = (res: Response, message: string, error: unknown): void => {
-  res.status(500).json({ error: message, detail: (error as Error).message });
-};
+import { sendServerError } from '../shared/controller.utils';
 
 // PATCH /api/users/:id/membership
 export const updateMembership = async (req: Request, res: Response): Promise<void> => {

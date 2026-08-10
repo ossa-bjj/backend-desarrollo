@@ -3,10 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { User } from './user.model';
 import { generateToken } from '../shared/token.utils';
-
-const sendServerError = (res: Response, message: string, error: unknown): void => {
-  res.status(500).json({ error: message, detail: (error as Error).message });
-};
+import { sendServerError } from '../shared/controller.utils';
 
 // POST /api/users/register
 export const register = async (req: Request, res: Response): Promise<void> => {
