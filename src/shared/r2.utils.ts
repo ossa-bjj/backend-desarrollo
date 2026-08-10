@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import type { Readable } from "node:stream";
 
 const getR2Client = () => {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -53,4 +54,20 @@ export const deleteFromR2 = async (key: string): Promise<void> => {
   });
 
   await s3Client.send(command);
+};
+
+export const getFromR2 = async (key: string): Promise<{ stream: Readable; contentType: string }> => {
+  const bucketName = process.env.R2_BUCKET_NAME || "assets";
+  const s3Client = getR2Client();
+
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+  });
+
+  const response = await s3Client.send(command);
+  return {
+    stream: response.Body as Readable,
+    contentType: response.ContentType || "application/octet-stream",
+  };
 };

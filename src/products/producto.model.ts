@@ -64,7 +64,7 @@ const ProductoSchema = new Schema<IProduct>(
     },
     imagenes: {
       type: [String],
-      default: () => [process.env.DEFAULT_IMAGE_URL || `${process.env.R2_PUBLIC_DOMAIN}/uploads/no-image-available.png`],
+      default: [],
       required: true,
     },
     tags: {

@@ -6,6 +6,7 @@ import connectDB from './src/shared/db';
 import userRouter from './src/users/auth.routes';
 import productoRouter from './src/products/producto.routes';
 import orderRouter from './src/orders/order.routes';
+import { getFromR2 } from './src/shared/r2.utils';
 
 const app = express();
 
@@ -61,6 +62,24 @@ app.use(async (_req, res, next) => {
 app.use('/api/users',    userRouter);
 app.use('/api/productos', productoRouter);
 app.use('/api/pedidos',  orderRouter);
+
+// --- PROXY DE IMÁGENES R2 (público, sin auth) ---
+app.get('/api/media/*key', async (req, res) => {
+  const segments = req.params.key;
+  const key = Array.isArray(segments) ? segments.join('/') : segments;
+  if (!key) return res.status(400).json({ error: 'Falta la clave del archivo' });
+
+  try {
+    const { stream, contentType } = await getFromR2(key);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    stream.pipe(res);
+  } catch (err: any) {
+    if (err.name === 'NoSuchKey') return res.status(404).json({ error: 'Archivo no encontrado' });
+    console.error('Error al obtener archivo de R2:', err.message);
+    res.status(500).json({ error: 'Error al obtener archivo' });
+  }
+});
 
 app.get('/', (_req, res) => {
   res.json({

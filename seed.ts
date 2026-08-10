@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import mongoose from 'mongoose';
 import {
   CustomerOrigin,
@@ -10,9 +12,10 @@ import {
 } from './src/users/user.model';
 import { ProductoModelo, Categoria } from './src/products/producto.model';
 import { resolveDbUrl } from './src/shared/db';
+import { uploadToR2 } from './src/shared/r2.utils';
 
-const IMG_DEFAULT = process.env.DEFAULT_IMAGE_URL
-  || `${process.env.R2_PUBLIC_DOMAIN}/uploads/no-image-available.png`;
+// Se sube en seed() y se asigna la URL devuelta por R2
+let IMG_DEFAULT = '';
 
 //  USUARIOS
 
@@ -630,6 +633,12 @@ async function seed() {
   await mongoose.connect(dbUrl);
   console.log('Conectado a MongoDB');
 
+  // Subir imagen por defecto a R2
+  const imgPath = resolve(__dirname, 'src/assets/nodisponible.jpg');
+  const imgBuffer = readFileSync(imgPath);
+  IMG_DEFAULT = await uploadToR2(imgBuffer, 'nodisponible.jpg', 'image/jpeg');
+  console.log('Imagen por defecto subida a R2:', IMG_DEFAULT);
+
   await User.deleteMany({});
   await ProductoModelo.deleteMany({});
   console.log('Colecciones limpiadas');
@@ -639,7 +648,12 @@ async function seed() {
   }
   console.log(`${usuarios.length} usuarios insertados`);
 
-  await ProductoModelo.insertMany(productos);
+  // Asignar la URL de R2 a todos los productos antes de insertar
+  const productosConImagen = productos.map((p) => ({
+    ...p,
+    imagenes: [IMG_DEFAULT],
+  }));
+  await ProductoModelo.insertMany(productosConImagen);
   console.log(`${productos.length} productos insertados`);
 
   await mongoose.disconnect();
