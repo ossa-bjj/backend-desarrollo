@@ -1,12 +1,30 @@
 import { Schema, model, Types } from 'mongoose';
 
 export enum OrderStatus {
+  // El pedido lleva algun servicio que un admin debe revisar y tarificar
+  // antes de que el cliente pueda pagarlo.
+  PENDIENTE_CONFIRMACION = 'pendiente_confirmacion',
+  // Confirmado y pagable: el total del pedido ya es definitivo.
   PENDIENTE = 'pendiente',
   PAGADO = 'pagado',
   PREPARANDO = 'preparando',
   ENVIADO = 'enviado',
   ENTREGADO = 'entregado',
   CANCELADO = 'cancelado',
+  // La administracion no acepta el pedido; libera los horarios retenidos.
+  RECHAZADO = 'rechazado',
+}
+
+/** Estados desde los que el cliente todavia no puede pagar. */
+export const ESTADOS_NO_PAGABLES: OrderStatus[] = [
+  OrderStatus.PENDIENTE_CONFIRMACION,
+  OrderStatus.CANCELADO,
+  OrderStatus.RECHAZADO,
+];
+
+export enum OrderItemTipo {
+  PRODUCTO = 'producto',
+  SERVICIO = 'servicio',
 }
 
 export interface IOrderItem {
@@ -15,6 +33,14 @@ export interface IOrderItem {
   quantity: number;
   price: number;
   image?: string;
+  tipo: OrderItemTipo;
+  // Precio de catalogo en el momento de crear el pedido. Se conserva aunque el
+  // admin ajuste `price`, para que quede rastro de por que cambio el importe.
+  precioOriginal: number;
+  motivoAjuste?: string;
+  // Reserva asociada cuando la linea es un servicio con horario.
+  slotId?: string;
+  slotLabel?: string;
 }
 
 export interface IOrder {
@@ -29,6 +55,9 @@ export interface IOrder {
     codigoPostal: string;
     pais: string;
   };
+  confirmadoEn?: Date;
+  confirmadoPor?: Types.ObjectId;
+  motivoRechazo?: string;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
@@ -38,6 +67,16 @@ const OrderItemSchema = new Schema<IOrderItem>(
     quantity:       { type: Number, required: true, min: 1 },
     price:          { type: Number, required: true, min: 0 },
     image:          { type: String, trim: true },
+    tipo: {
+      type:     String,
+      enum:     Object.values(OrderItemTipo),
+      required: true,
+      default:  OrderItemTipo.PRODUCTO,
+    },
+    precioOriginal: { type: Number, required: true, min: 0 },
+    motivoAjuste:   { type: String, trim: true },
+    slotId:    { type: String, trim: true },
+    slotLabel: { type: String, trim: true },
   },
   { _id: false },
 );
@@ -72,6 +111,9 @@ const OrderSchema = new Schema<IOrder>(
       codigoPostal: { type: String, trim: true },
       pais:         { type: String, trim: true },
     },
+    confirmadoEn:  { type: Date },
+    confirmadoPor: { type: Schema.Types.ObjectId, ref: 'User' },
+    motivoRechazo: { type: String, trim: true },
   },
   {
     timestamps: true,

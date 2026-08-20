@@ -5,6 +5,8 @@ import {
   getOrderById,
   getOrders,
   updateOrderStatus,
+  confirmOrder,
+  rejectOrder,
 } from './order.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 
@@ -13,6 +15,8 @@ const router = Router();
 router.get('/',            isAuth,          getOrders);
 router.post('/',           isAuth,          createOrder);
 router.get('/:id',         isAuth,          getOrderById);
+router.patch('/:id/confirmar', isAuth, isAdmin, confirmOrder);
+router.patch('/:id/rechazar',  isAuth, isAdmin, rejectOrder);
 router.patch('/:id/status',isAuth, isAdmin, updateOrderStatus);
 router.delete('/:id',      isAuth, isAdmin, deleteOrder);
 
