@@ -8,9 +8,16 @@ import {
   confirmOrder,
   rejectOrder,
 } from './order.controller';
+import { iniciarPago, stripeWebhook } from '../payments/pago.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 
 const router = Router();
+
+// --- PAGO ---
+// El webhook va antes que las rutas con :id y sin isAuth: lo autentica la firma
+// de Stripe. Su cuerpo llega en crudo (ver express.raw en index.ts).
+router.post('/webhook', stripeWebhook);
+router.post('/:id/pago/iniciar', isAuth, iniciarPago);
 
 router.get('/',            isAuth,          getOrders);
 router.post('/',           isAuth,          createOrder);

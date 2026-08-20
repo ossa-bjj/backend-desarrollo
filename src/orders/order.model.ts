@@ -55,6 +55,12 @@ export interface IOrder {
     codigoPostal: string;
     pais: string;
   };
+  pago?: {
+    proveedor: string;
+    paymentIntentId: string;
+    estado: string;
+    pagadoEn?: Date;
+  };
   confirmadoEn?: Date;
   confirmadoPor?: Types.ObjectId;
   motivoRechazo?: string;
@@ -110,6 +116,14 @@ const OrderSchema = new Schema<IOrder>(
       provincia:    { type: String, trim: true },
       codigoPostal: { type: String, trim: true },
       pais:         { type: String, trim: true },
+    },
+    // Rastro del cobro. `paymentIntentId` permite reutilizar el intento si el
+    // cliente vuelve a la pantalla de pago sin haber terminado.
+    pago: {
+      proveedor:       { type: String, trim: true },
+      paymentIntentId: { type: String, trim: true, index: true },
+      estado:          { type: String, trim: true },
+      pagadoEn:        { type: Date },
     },
     confirmadoEn:  { type: Date },
     confirmadoPor: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -16,6 +16,10 @@ validateEnvironment();
 const app = express();
 
 // --- MIDDLEWARES ---
+// Stripe firma el cuerpo tal cual lo envia, asi que el webhook necesita el
+// Buffer sin parsear. express.json() detecta que el cuerpo ya se leyo y lo
+// respeta, por eso este orden importa.
+app.use('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // --- CORS ---
