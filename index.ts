@@ -7,6 +7,9 @@ import userRouter from './src/users/auth.routes';
 import productoRouter from './src/products/producto.routes';
 import orderRouter from './src/orders/order.routes';
 import { getFromR2 } from './src/shared/r2.utils';
+import { validateEnvironment } from './src/shared/env';
+
+validateEnvironment();
 
 const app = express();
 
@@ -99,7 +102,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // --- SERVIDOR (solo en local, en Vercel se usa api/index.ts) ---
-if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.main === module) {
+if (require.main === module) {
   const PORT = Number(process.env.PORT) || 3000;
   connectDB()
     .then(() => {
