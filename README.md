@@ -1,188 +1,90 @@
-# Arturo Salas Academy - Backend
+# Arturo Salas Academy — Backend
 
-Este es el repositorio de la API y backend para **Arturo Salas Academy**. Proporciona el soporte de base de datos, autenticación de usuarios, gestión de membresías, procesamiento de pedidos de la tienda (integrado con Stripe) y carga de archivos a través de Cloudinary.
+API de Arturo Salas Academy. Está construida con Express y TypeScript, persiste sus datos en MongoDB y almacena archivos e imágenes en Cloudflare R2. Se despliega como función serverless de Vercel mediante `api/index.ts`.
 
-## 🚀 Tecnologías Principales
+## Tecnologías
 
-*   **Entorno de Ejecución**: Node.js + TypeScript
-*   **Framework**: Express (v5)
-*   **Base de Datos**: MongoDB + Mongoose
-*   **Autenticación**: JSON Web Tokens (JWT) + Bcryptjs
-*   **Almacenamiento de Archivos**: Multer + Cloudinary
-*   **Despliegue**: Cloudflare Workers (`wrangler`) + Vercel Serverless (`api/index.ts`)
-*   **Gestor de Paquetes**: `pnpm` (obligatorio para mantener `pnpm-lock.yaml` en CI/CD)
+- Node.js + TypeScript + Express 5
+- MongoDB + Mongoose
+- JWT + bcryptjs
+- Multer + Cloudflare R2 (`@aws-sdk/client-s3`)
+- Vercel Serverless
+- pnpm
 
-## 📁 Estructura del Proyecto
+## Estructura
 
 ```text
 backend/
-├── api/                  # Punto de entrada para el despliegue serverless (Vercel)
-├── docs/                 # Documentación técnica de la API
+├── api/index.ts          # Entrada serverless de Vercel
 ├── src/
-│   ├── orders/           # Rutas, modelos y controladores de Pedidos/Ordenes
-│   ├── products/         # Rutas, modelos y controladores de Productos
-│   ├── users/            # Rutas, modelos y controladores de Usuarios y Autenticación
-│   └── shared/           # Conectores de base de datos y utilidades compartidas
-├── index.ts              # Punto de entrada principal (Express + Serverless Handler para Cloudflare)
-├── seed.ts               # Script para poblar la base de datos con datos de prueba
-├── tsconfig.json         # Configuración de TypeScript en formato ESM (ESNext)
-└── wrangler.toml         # Configuración de despliegue en Cloudflare Workers
+│   ├── orders/           # Pedidos
+│   ├── products/         # Productos y carga de imágenes
+│   ├── users/            # Usuarios, perfiles y membresías
+│   └── shared/           # DB, JWT, R2 y middleware compartido
+├── docs/api-endpoints.md # Referencia de rutas
+├── index.ts              # App Express y servidor local
+├── seed.ts               # Datos locales de ejemplo
+└── vercel.json           # Reescritura hacia la función API
 ```
 
-## 💻 Guía de Configuración Local para el Equipo
+## Desarrollo local
 
-Sigue estos pasos para configurar y trabajar en el proyecto en tu máquina local:
-
-### 1. Clonar e Instalar Dependencias
 ```bash
-git clone https://github.com/ossa-bjj/backend.git
-cd backend
-
-# Instalar pnpm de forma global (si no lo tienes aún)
-npm install -g pnpm
-
-# Instalar las dependencias del proyecto
 pnpm install
-```
-
-### 2. Configurar Variables de Entorno
-Crea un archivo `.env` en la raíz basado en `.env.example`:
-```bash
 cp .env.example .env
-```
-Completa las credenciales de MongoDB, Cloudinary y JWT correspondientes.
-
-### 3. Levantar el Servidor de Desarrollo
-```bash
 pnpm dev
 ```
-El servidor de Express se levantará localmente en `http://localhost:3000`.
 
----
+La API queda disponible en `http://localhost:3000`; el prefijo de las rutas es `/api`.
 
-## ⚡ Flujo de Despliegue Automático (CI / CD)
+### Variables de entorno
 
-> 🚀 **DESPLIEGUE AUTOMÁTICO AL HACER PUSH**:
-> **No necesitas desplegar manualmente**. 
-> 
-> Cada vez que tú o cualquier compañero haga un `git push origin main`:
-> 1. Cloudflare detecta el commit automáticamente en GitHub.
-> 2. Ejecuta la compilación de TypeScript (`pnpm run build`).
-> 3. **Despliega automáticamente el backend** a producción en `https://backend.artosalas24.workers.dev` en unos 15-20 segundos.
-
----
-
-## 🛠️ Comandos Disponibles
-
-> ⚠️ **REGLA DE ORO DEL EQUIPO**: Usa siempre `pnpm` (no `npm`) para agregar o actualizar paquetes y evitar desincronizaciones de `pnpm-lock.yaml`.
-
-```bash
-# Instalar dependencias
-pnpm install
-
-# Instalar una nueva dependencia (ejemplo)
-pnpm add <nombre-paquete>
-pnpm add -D <nombre-paquete>
-
-# Levantar servidor de desarrollo local
-pnpm dev
-
-# Compilar TypeScript a JavaScript
-pnpm build
-
-# Probar la compilación de Cloudflare Workers sin desplegar
-npx wrangler deploy --dry-run
-
-# Desplegar manualmente a Cloudflare Workers (Opcional, en caso de emergencia)
-npx wrangler deploy
-```
-
-## ☁️ Despliegue en Cloudflare Workers
-
-El backend está adaptado para ejecutarse en la infraestructura de V8 Isolates de **Cloudflare Workers**.
-
-### 1. Cambios Arquitectónicos Implementados
-
-* **Formato ES Modules (ESM)**:
-  `tsconfig.json` está configurado con `"module": "ESNext"` y `"moduleResolution": "bundler"`. Cloudflare Workers requiere sintaxis ESM nativa (`import` / `export`).
-* **Compatibilidad con Node.js (`nodejs_compat`)**:
-  En `wrangler.toml` está activa la bandera `compatibility_flags = ["nodejs_compat"]`, lo que permite el uso de módulos nativos de Node.js (`crypto`, `events`, `buffer`, `fs`, `path`, `stream`, etc.) y librerías como Mongoose, Bcryptjs y Cloudinary.
-* **Manejador `fetch` nativo (Adaptador Fetch API -> Express)**:
-  Cloudflare Workers no ejecuta `app.listen()` ni es compatible con `serverless-http` (diseñado para eventos de AWS Lambda). Usamos un adaptador nativo Fetch API -> Express en `index.ts` que transforma las peticiones `Request` estándar a streams HTTP de Express y devuelve respuestas `Response`:
-  ```typescript
-  export default {
-    async fetch(request: Request, env: any): Promise<Response> {
-      try {
-        if (env && typeof env === 'object') {
-          Object.assign(process.env, env);
-        }
-        return await handleFetch(app, request);
-      } catch (err: any) {
-        return new Response(JSON.stringify({ error: 'Worker Error', message: err.message }), { status: 500 });
-      }
-    }
-  };
-  ```
-* **Paso de Variables de Entorno de Cloudflare (`env`)**:
-  En cada petición entrante, el objeto `env` proporcionado por Cloudflare se inyecta dinámicamente en `process.env`, garantizando acceso inmediato a `DB_URL`, `JWT_SECRET` y `ALLOWED_ORIGINS`.
-* **CORS Dinámico**:
-  Middleware de CORS en `index.ts` configurado para resolver `ALLOWED_ORIGINS` en cada petición y dar soporte al origen del frontend local (`http://localhost:5173`) y despliegues en Cloudflare Pages (`*.pages.dev`).
-* **Importaciones estrictas ESM**:
-  Toda la aplicación utiliza exclusivamente `import` y `export default`. Se eliminaron llamadas a `require()` o `module.exports` para prevenir errores de interoperabilidad.
-* **Guarda para ejecución local**:
-  La inicialización del servidor local (`app.listen()`) en `index.ts` está protegida por:
-  ```typescript
-  if (typeof module !== 'undefined' && typeof require !== 'undefined' && require.main === module)
-  ```
-  Evitando el error `ReferenceError: module is not defined` en el runtime de Cloudflare Workers.
-
-### 2. Configuración en el Panel de Cloudflare (CI / CD)
-
-En **Cloudflare Dashboard** -> **Workers & Pages** -> **backend** -> **Settings**:
-
-* **Build command (Comando de construcción)**: `pnpm run build`
-* **Deploy command (Comando de despliegue)**: `npx wrangler deploy` *(No añadir rutas ni banderas extras como `dist/index.js` ni `--compatibility-flag`, ya que están definidas en `wrangler.toml`)*.
-* **Variables de Entorno (CI)**: `NPM_FLAGS = --no-frozen-lockfile` (permite instalar dependencias si hay ligeros desajustes en CI).
-
----
-
-## ⚙️ Configuración del Entorno (`.env`)
-
-Crea un archivo `.env` en la raíz del proyecto basado en `.env.example`:
+La aplicación valida al arrancar que estén presentes `DB_URL`, `JWT_SECRET` y todas las variables `R2_*`. Copia `.env.example` y completa:
 
 ```env
-PORT=3000
 DB_URL=mongodb+srv://...
-DATABASE_USER=tu_usuario_mongodb
-DATABASE_PASS=tu_contraseña_mongodb
-JWT_SECRET=tu_secreto_para_tokens_jwt
-CLOUDINARY_CLOUD_NAME=tu_cloud_name
-CLOUDINARY_API_KEY=tu_api_key
-CLOUDINARY_API_SECRET=tu_api_secret
-ALLOWED_ORIGINS=http://localhost:5173,https://tudominio.com
+JWT_SECRET=un-secreto-largo
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=assets
+R2_PUBLIC_DOMAIN=http://localhost:3000/api/media
+ALLOWED_ORIGINS=http://localhost:5173
 ```
 
-## 🛠️ Guía de Solución de Problemas (Troubleshooting)
+`PORT` es opcional y por defecto es `3000`. `ALLOWED_ORIGINS` acepta una lista separada por comas.
 
-Si en el futuro algún despliegue falla en Cloudflare, consulta esta lista de comprobación:
+## Datos de prueba locales
 
-1. **Error `[ERR_PNPM_OUTDATED_LOCKFILE]`**:
-   - *Causa*: Se modificó `package.json` sin actualizar `pnpm-lock.yaml`.
-   - *Solución*: Ejecuta `pnpm install` en tu terminal local, haz commit de `pnpm-lock.yaml` y haz `git push`.
-2. **Error `No such compatibility flag: dist/index.js`**:
-   - *Causa*: El comando de despliegue en Cloudflare Dashboard tiene argumentos extra.
-   - *Solución*: Cambia el **Deploy command** en Cloudflare Dashboard a simplemente `npx wrangler deploy`.
-3. **Error `The uploaded script has no registered event handlers`**:
-   - *Causa*: Falta el objeto `export default { fetch }` en `index.ts`.
-   - *Solución*: Verifica que `index.ts` mantenga el adaptador `serverless-http` exportando la propiedad `fetch`.
-4. **Error `Uncaught ReferenceError: module is not defined`**:
-   - *Causa*: Se usó la variable global `module` sin verificar si existe en el entorno ESM de Cloudflare.
-   - *Solución*: Protege la evaluación con `typeof module !== 'undefined'`.
+Con una base de datos y R2 de desarrollo configurados, ejecuta:
 
-## 📄 Documentación Continua
+```bash
+pnpm seed
+```
 
-Para consultar las especificaciones de las rutas de la API, modelos de datos y arquitectura, revisa la carpeta:
-*   [docs/](file:///C:/Proyectos/ArturoSalasWEB/backend/docs)
+El seed crea, entre otros, estos usuarios de desarrollo:
 
----
-**Repositorio definitivo**: [ossa-bjj/backend](https://github.com/ossa-bjj/backend)
+| Usuario | Contraseña | Rol |
+| --- | --- | --- |
+| `admin` | `Admin1234!` | administrador |
+| `cliente_regular` | `Cliente1234!` | usuario |
+
+Estas credenciales son exclusivamente datos de prueba locales; no deben reutilizarse en producción.
+
+## Comandos
+
+```bash
+pnpm dev            # Servidor local con recarga
+pnpm build          # Compila TypeScript a dist/
+pnpm start          # Ejecuta el resultado compilado
+pnpm seed           # Carga datos de ejemplo
+npx tsc --noEmit    # Verificación de tipos
+```
+
+Usa `pnpm` para mantener el lockfile del repositorio.
+
+## Despliegue en Vercel
+
+Vercel carga `api/index.ts`, que reexporta la aplicación Express de `index.ts`. `vercel.json` reescribe las solicitudes hacia esa función. Configura en el proyecto de Vercel las mismas variables obligatorias de producción (`DB_URL`, `JWT_SECRET` y `R2_*`) y define `ALLOWED_ORIGINS` con el origen público del frontend.
+
+El proxy público `GET /api/media/*key` recupera los objetos de R2. Consulta [docs/api-endpoints.md](docs/api-endpoints.md) para las rutas disponibles y sus requisitos de autenticación.

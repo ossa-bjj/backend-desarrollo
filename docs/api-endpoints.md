@@ -1,53 +1,67 @@
-# Especificación de la API
+# Endpoints de la API
 
-Esta es la documentación de referencia de los endpoints expuestos por la API del backend de Arturo Salas Academy.
+Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <token>`; las marcadas como **admin** requieren además rol de administrador. Todas las rutas descritas provienen de los routers actuales.
 
-## 🔐 Autenticación y Usuarios (`/api/users`)
+## Estado y medios
 
-| Método | Endpoint | Descripción | Acceso |
-| :--- | :--- | :--- | :--- |
-| **POST** | `/api/users/register` | Registrar un nuevo usuario | Público |
-| **POST** | `/api/users/login` | Iniciar sesión y obtener token JWT | Público |
-| **GET** | `/api/users/me` | Obtener el perfil del usuario actual | Autenticado |
-| **PUT** | `/api/users/me` | Actualizar el perfil del usuario actual | Autenticado |
+| Método | Ruta | Acceso | Descripción |
+| --- | --- | --- | --- |
+| GET | `/` | Público | Estado de la API y de la conexión a MongoDB. |
+| GET | `/media/*key` | Público | Recupera un archivo almacenado en Cloudflare R2. |
 
-### Roles de Usuario:
-*   `USER` (Cliente regular o deportista no federado)
-*   `PREMIUM` (Deportista federado)
-*   `ADMIN` (Administrador del sistema)
+## Usuarios (`/users`)
 
----
+| Método | Ruta | Acceso | Descripción |
+| --- | --- | --- | --- |
+| POST | `/register` | Público | Registra un usuario. |
+| POST | `/login` | Público | Inicia sesión y obtiene token. |
+| POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. |
+| POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
+| GET | `/me` | Autenticado | Devuelve el usuario de la sesión. |
+| POST | `/` | Admin | Crea un usuario. |
+| GET | `/` | Admin | Lista usuarios. |
+| GET | `/:id` | Admin | Obtiene un usuario por identificador. |
+| PUT | `/:id` | Autenticado | Actualiza un usuario. |
+| PATCH | `/:id/password` | Autenticado | Cambia la contraseña. |
+| PATCH | `/:id/status` | Admin | Cambia el estado del usuario. |
+| PATCH | `/:id/customer` | Admin | Actualiza datos de cliente. |
+| PATCH | `/:id/sports-profile` | Admin | Actualiza el perfil deportivo. |
+| DELETE | `/:id/sports-profile` | Admin | Elimina el perfil deportivo. |
+| PATCH | `/:id/membership` | Admin | Actualiza la membresía. |
+| POST | `/:id/addresses` | Autenticado | Añade una dirección. |
+| PATCH | `/:id/addresses/:addressId` | Autenticado | Actualiza una dirección. |
+| DELETE | `/:id/addresses/:addressId` | Autenticado | Elimina una dirección. |
+| GET | `/:id/membership-payments` | Admin | Lista pagos de membresía. |
+| POST | `/:id/membership-payments` | Admin | Registra un pago de membresía. |
+| PATCH | `/:id/membership-payments/:paymentId` | Admin | Actualiza un pago de membresía. |
+| DELETE | `/:id/membership-payments/:paymentId` | Admin | Elimina un pago de membresía. |
+| DELETE | `/:id` | Admin | Elimina un usuario. |
 
-## 🛒 Productos y Tienda (`/api/productos`)
+## Productos (`/productos`)
 
-| Método | Endpoint | Descripción | Acceso |
-| :--- | :--- | :--- | :--- |
-| **GET** | `/api/productos` | Obtener lista de productos con filtros y paginación | Público |
-| **GET** | `/api/productos/:id` | Obtener detalles de un producto específico | Público |
-| **POST** | `/api/productos` | Crear un nuevo producto (con imágenes) | Admin |
-| **PUT** | `/api/productos/:id` | Actualizar datos del producto | Admin |
-| **DELETE** | `/api/productos/:id` | Eliminar un producto del catálogo | Admin |
+| Método | Ruta | Acceso | Descripción |
+| --- | --- | --- | --- |
+| GET | `/` | Público | Lista productos. |
+| GET | `/search` | Público | Busca productos. |
+| GET | `/destacados` | Público | Lista productos destacados. |
+| GET | `/categoria/:categoria` | Público | Lista productos de una categoría. |
+| GET | `/marca/:marca` | Público | Lista productos de una marca. |
+| GET | `/:codigoArticulo` | Público | Obtiene un producto por código de artículo. |
+| POST | `/` | Admin | Crea un producto. |
+| PUT | `/:codigoArticulo` | Admin | Actualiza un producto. |
+| PATCH | `/:codigoArticulo/stock` | Admin | Actualiza el stock. |
+| POST | `/:codigoArticulo/imagenes` | Admin | Sube hasta diez archivos en el campo multipart `imagenes`. |
+| DELETE | `/:codigoArticulo/imagenes` | Admin | Elimina una imagen del producto. |
+| DELETE | `/:codigoArticulo` | Admin | Elimina un producto. |
 
----
+## Pedidos (`/pedidos`)
 
-## 📦 Pedidos y Facturación (`/api/pedidos`)
+| Método | Ruta | Acceso | Descripción |
+| --- | --- | --- | --- |
+| GET | `/` | Autenticado | Lista pedidos según el usuario autenticado. |
+| POST | `/` | Autenticado | Crea un pedido. |
+| GET | `/:id` | Autenticado | Obtiene un pedido por identificador. |
+| PATCH | `/:id/status` | Admin | Cambia el estado de un pedido. |
+| DELETE | `/:id` | Admin | Elimina un pedido. |
 
-| Método | Endpoint | Descripción | Acceso |
-| :--- | :--- | :--- | :--- |
-| **POST** | `/api/pedidos` | Crear un pedido con sesión de Stripe Checkout | Autenticado |
-| **GET** | `/api/pedidos/mis-pedidos` | Obtener el historial de pedidos del usuario actual | Autenticado |
-| **GET** | `/api/pedidos/:id` | Obtener detalles de un pedido específico | Autenticado/Admin |
-| **POST** | `/api/pedidos/webhook` | Webhook de Stripe para confirmación de pagos | Público (Stripe) |
-
----
-
-## 🗄️ Modelos de Base de Datos (Mongoose)
-
-### 1. Usuario (`User`)
-Almacena credenciales encriptadas, información de perfil, direcciones, estado de deportista (club, federación) y el estado/historial de pagos de su membresía recurrente.
-
-### 2. Producto (`ProductoModelo`)
-Almacena el código del artículo, nombre, precio, descripción, stock actual, categoría, subcategoría, marca, etiquetas y array de URLs de imágenes alojadas en Cloudinary.
-
-### 3. Pedido (`Order`)
-Almacena los productos comprados, cantidades, precio unitario histórico, total pagado, ID de pago de Stripe, dirección de envío y estado de entrega.
+No hay rutas de Stripe, webhooks ni inicio de pago en los routers actuales.
