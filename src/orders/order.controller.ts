@@ -37,6 +37,8 @@ interface EntradaCatalogo {
 // Ajuste que el admin aplica a una linea al confirmar el presupuesto.
 interface AjusteLinea {
   codigoArticulo: unknown;
+  /** Horario original de la linea: junto al codigo la identifica de forma unica. */
+  slotOriginalId?: unknown;
   price?:         unknown;
   quantity?:      unknown;
   motivoAjuste?:  unknown;
@@ -121,8 +123,16 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       codigos.push(codigo);
     }
 
-    if (new Set(codigos).size !== codigos.length) {
-      res.status(400).json({ error: 'El pedido contiene lineas duplicadas para el mismo articulo' });
+    // La identidad de una linea es el articulo MAS su horario: dos sesiones del
+    // mismo servicio a distinta hora son dos lineas legitimas. Lo que no se
+    // admite es repetir exactamente la misma combinacion.
+    const claves = lineas.map((linea, i) => {
+      const slot = typeof linea.slotId === 'string' ? linea.slotId : '';
+      return `${codigos[i]}#${slot}`;
+    });
+
+    if (new Set(claves).size !== claves.length) {
+      res.status(400).json({ error: 'El pedido repite el mismo articulo y horario dos veces' });
       return;
     }
 
@@ -169,6 +179,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 
     // --- Construccion de las lineas definitivas ---
     const itemsResueltos = [];
+    const unidadesPorArticulo = new Map<number, number>();
     let total = 0;
 
     for (let i = 0; i < lineas.length; i += 1) {
@@ -187,12 +198,16 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
         return;
       }
 
-      if (quantity > entrada.maximo) {
+      // Con varias lineas del mismo articulo hay que sumar: tres reservas de una
+      // plaza agotan un servicio de tres plazas igual que una reserva de tres.
+      const acumulado = (unidadesPorArticulo.get(codigo) ?? 0) + quantity;
+      if (acumulado > entrada.maximo) {
         res.status(409).json({
           error: `Solo quedan ${entrada.maximo} ${entrada.etiqueta} de "${entrada.name}"`,
         });
         return;
       }
+      unidadesPorArticulo.set(codigo, acumulado);
 
       const esServicio = entrada.tipo === OrderItemTipo.SERVICIO;
 
@@ -270,20 +285,24 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Ajustes indexados por codigo de articulo; las lineas no mencionadas se
-    // quedan como estaban.
-    const ajustes = new Map<number, AjusteLinea>();
+    // Los ajustes se indexan por articulo MAS horario original, porque un pedido
+    // puede llevar dos sesiones del mismo servicio a horas distintas.
+    const claveLinea = (codigo: number, slotId?: string) => `${codigo}#${slotId ?? ''}`;
+
+    const ajustes = new Map<string, AjusteLinea>();
     if (Array.isArray(req.body?.ajustes)) {
       for (const ajuste of req.body.ajustes as AjusteLinea[]) {
         const codigo = Number(ajuste?.codigoArticulo);
-        if (Number.isInteger(codigo)) ajustes.set(codigo, ajuste);
+        if (!Number.isInteger(codigo)) continue;
+        const slotOriginal = typeof ajuste.slotOriginalId === 'string' ? ajuste.slotOriginalId : undefined;
+        ajustes.set(claveLinea(codigo, slotOriginal), ajuste);
       }
     }
 
     let total = 0;
 
     for (const item of order.items) {
-      const ajuste = ajustes.get(item.codigoArticulo);
+      const ajuste = ajustes.get(claveLinea(item.codigoArticulo, item.slotId));
 
       if (ajuste) {
         if (ajuste.price !== undefined) {
