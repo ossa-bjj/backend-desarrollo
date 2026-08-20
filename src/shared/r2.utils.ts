@@ -71,3 +71,14 @@ export const getFromR2 = async (key: string): Promise<{ stream: Readable; conten
     contentType: response.ContentType || "application/octet-stream",
   };
 };
+
+// Convierte una URL publica de R2 en la key interna del bucket.
+// Si la URL no cuelga del dominio publico configurado se devuelve tal cual,
+// asumiendo que ya era una key.
+export const keyFromPublicUrl = (url: string): string => {
+  const publicDomain = process.env.R2_PUBLIC_DOMAIN || "";
+  if (!publicDomain) return url;
+
+  const cleanDomain = publicDomain.endsWith("/") ? publicDomain.slice(0, -1) : publicDomain;
+  return url.startsWith(cleanDomain + "/") ? url.slice(cleanDomain.length + 1) : url;
+};

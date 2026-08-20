@@ -6,6 +6,7 @@ import connectDB from './src/shared/db';
 import userRouter from './src/users/auth.routes';
 import productoRouter from './src/products/producto.routes';
 import orderRouter from './src/orders/order.routes';
+import servicioRouter from './src/services/servicio.routes';
 import { getFromR2 } from './src/shared/r2.utils';
 import { validateEnvironment } from './src/shared/env';
 
@@ -65,6 +66,7 @@ app.use(async (_req, res, next) => {
 app.use('/api/users',    userRouter);
 app.use('/api/productos', productoRouter);
 app.use('/api/pedidos',  orderRouter);
+app.use('/api/servicios', servicioRouter);
 
 // --- PROXY DE IMÁGENES R2 (público, sin auth) ---
 app.get('/api/media/*key', async (req, res) => {
