@@ -11,6 +11,7 @@ import {
   UserStatus,
 } from './src/users/user.model';
 import { ProductoModelo, Categoria } from './src/products/producto.model';
+import { ServicioModelo, ModalidadServicio } from './src/services/servicio.model';
 import { resolveDbUrl } from './src/shared/db';
 import { uploadToR2 } from './src/shared/r2.utils';
 
@@ -626,6 +627,99 @@ const productos = [
   },
 ];
 
+
+// ─── SERVICIOS ──────────────────────────────────────────────────────────
+// Los servicios comparten el espacio de codigoArticulo con los productos: 60XX.
+// `duracion` debe cuadrar con la duracion de los slots de disponibilidad.
+
+const servicios = [
+  {
+    codigoArticulo: 6001,
+    nombre: 'Sesión de Coaching',
+    precio: 150,
+    subcategoria: 'Coaching',
+    descripcionCorta: 'Entrenamiento personalizado one-on-one en el tatami.',
+    descripcionCompleta: 'Sesión de entrenamiento personalizado con Arturo Salas. Análisis técnico, corrección de postura, trabajo de posiciones específicas y estrategia de combate adaptada a tu nivel y objetivos.',
+    modalidad: ModalidadServicio.PRESENCIAL,
+    duracion: 60,
+    plazas: 1,
+    requiereReserva: true,
+    requiereConfirmacion: true,
+    activo: true,
+    imagenes: [] as string[],
+    tags: ['coaching', 'presencial', 'destacado'],
+    orden: 1,
+  },
+  {
+    codigoArticulo: 6002,
+    nombre: 'Mentoría Online',
+    precio: 80,
+    subcategoria: 'Mentoría',
+    descripcionCorta: 'Análisis de tu juego y plan de mejora vía videollamada.',
+    descripcionCompleta: 'Sesión de mentoría online por videollamada. Revisión de tu material de competición, identificación de puntos de mejora y diseño de un plan de entrenamiento personalizado. Incluye resumen escrito post-sesión.',
+    modalidad: ModalidadServicio.ONLINE,
+    duracion: 45,
+    plazas: 1,
+    requiereReserva: true,
+    requiereConfirmacion: true,
+    activo: true,
+    imagenes: [] as string[],
+    tags: ['mentoria', 'online'],
+    orden: 2,
+  },
+  {
+    codigoArticulo: 6003,
+    nombre: 'Seminario — Día Completo',
+    precio: 300,
+    subcategoria: 'Seminarios',
+    descripcionCorta: 'Jornada intensiva de técnica avanzada en grupo reducido.',
+    descripcionCompleta: 'Seminario de BJJ/Grappling de nivel avanzado con Arturo Salas. Contenido: sistema de guard, top game, leg locks y estrategia de competición. Incluye material de apoyo y sesión de preguntas. Jornada de 8 horas con descansos.',
+    modalidad: ModalidadServicio.PRESENCIAL,
+    duracion: 480,
+    plazas: 20,
+    requiereReserva: true,
+    requiereConfirmacion: true,
+    activo: true,
+    imagenes: [] as string[],
+    tags: ['seminario', 'grupo', 'destacado'],
+    orden: 3,
+  },
+  {
+    codigoArticulo: 6004,
+    nombre: 'Coaching de Evaluación',
+    precio: 60,
+    subcategoria: 'Evaluación',
+    descripcionCorta: 'Diagnóstico completo de tu nivel técnico y táctico.',
+    descripcionCompleta: 'Sesión de evaluación técnica exhaustiva. Arturo analiza tu juego en directo, identifica tus fortalezas y debilidades, y entrega un informe detallado con recomendaciones específicas para los próximos 3-6 meses de entrenamiento.',
+    modalidad: ModalidadServicio.PRESENCIAL,
+    duracion: 45,
+    plazas: 1,
+    requiereReserva: true,
+    requiereConfirmacion: true,
+    activo: true,
+    imagenes: [] as string[],
+    tags: ['evaluacion', 'presencial'],
+    orden: 4,
+  },
+  {
+    codigoArticulo: 6005,
+    nombre: 'Clases Privadas',
+    precio: 120,
+    subcategoria: 'Clases Privadas',
+    descripcionCorta: 'Clases regulares individuales adaptadas a tu progresión.',
+    descripcionCompleta: 'Clases privadas regulares con Arturo Salas. Programa adaptado a tu nivel (principiante, competidor, cinturón de color). Cada clase incluye calentamiento técnico, trabajo de posiciones y rolling supervisado.',
+    modalidad: ModalidadServicio.PRESENCIAL,
+    duracion: 90,
+    plazas: 1,
+    requiereReserva: true,
+    requiereConfirmacion: true,
+    activo: true,
+    imagenes: [] as string[],
+    tags: ['clases', 'presencial', 'destacado'],
+    orden: 5,
+  },
+];
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 async function seed() {
@@ -641,6 +735,7 @@ async function seed() {
 
   await User.deleteMany({});
   await ProductoModelo.deleteMany({});
+  await ServicioModelo.deleteMany({});
   console.log('Colecciones limpiadas');
 
   for (const u of usuarios) {
@@ -655,6 +750,13 @@ async function seed() {
   }));
   await ProductoModelo.insertMany(productosConImagen);
   console.log(`${productos.length} productos insertados`);
+
+  const serviciosConImagen = servicios.map((s) => ({
+    ...s,
+    imagenes: [IMG_DEFAULT],
+  }));
+  await ServicioModelo.insertMany(serviciosConImagen);
+  console.log(`${servicios.length} servicios insertados`);
 
   await mongoose.disconnect();
   console.log('Seed completado');
