@@ -6,9 +6,9 @@ import { DisponibilidadModelo, EstadoSlot } from './disponibilidad.model';
  * Pasado ese plazo el slot vuelve al catalogo aunque el pedido siga vivo:
  * evita que una cesta abandonada bloquee la agenda indefinidamente.
  */
-export const HORAS_RETENCION = 48;
+const HORAS_RETENCION = 48;
 
-export const calcularCaducidad = (): Date =>
+const calcularCaducidad = (): Date =>
   new Date(Date.now() + HORAS_RETENCION * 60 * 60 * 1000);
 
 /**

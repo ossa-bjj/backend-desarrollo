@@ -2,7 +2,6 @@ import { Schema, model } from 'mongoose';
 
 // Los servicios comparten el espacio de codigoArticulo con los productos.
 // Convencion de codigos: 60XX -> SERVICIOS (el resto de prefijos vive en producto.model.ts)
-export const PREFIJO_SERVICIO = 60;
 export const CODIGO_SERVICIO_MIN = 6000;
 export const CODIGO_SERVICIO_MAX = 6999;
 

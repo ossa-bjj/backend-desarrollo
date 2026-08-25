@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import connectDB from './src/shared/db';
-import userRouter from './src/users/auth.routes';
+import userRouter from './src/users/user.routes';
 import productoRouter from './src/products/producto.routes';
 import orderRouter from './src/orders/order.routes';
 import servicioRouter from './src/services/servicio.routes';

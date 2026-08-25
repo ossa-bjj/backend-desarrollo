@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { CustomerOrigin, User } from './user.model';
-import { sendServerError, isOwnerOrAdmin } from '../shared/controller.utils';
+import { sendServerError, esDuenoOAdmin } from '../shared/controller.utils';
 
 // PATCH /api/users/:id/customer
 export const updateCustomer = async (req: Request, res: Response): Promise<void> => {
@@ -40,7 +40,7 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando datos de cliente', error);
   }
@@ -80,7 +80,7 @@ export const updateSportsProfile = async (req: Request, res: Response): Promise<
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando perfil deportivo', error);
   }
@@ -107,7 +107,7 @@ export const removeSportsProfile = async (req: Request, res: Response): Promise<
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error eliminando perfil deportivo', error);
   }
@@ -123,8 +123,8 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (!isOwnerOrAdmin(req, id)) {
-      res.status(403).json({ error: 'No tenés permisos para añadir direcciones a este usuario' });
+    if (!esDuenoOAdmin(req, id)) {
+      res.status(403).json({ error: 'No tienes permisos para añadir direcciones a este usuario' });
       return;
     }
 
@@ -139,7 +139,7 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    res.status(201).json(user);
+    res.status(201).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error añadiendo dirección', error);
   }
@@ -156,8 +156,8 @@ export const updateAddress = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    if (!isOwnerOrAdmin(req, id)) {
-      res.status(403).json({ error: 'No tenés permisos para actualizar direcciones de este usuario' });
+    if (!esDuenoOAdmin(req, id)) {
+      res.status(403).json({ error: 'No tienes permisos para actualizar direcciones de este usuario' });
       return;
     }
 
@@ -185,7 +185,7 @@ export const updateAddress = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando dirección', error);
   }
@@ -201,8 +201,8 @@ export const removeAddress = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    if (!isOwnerOrAdmin(req, id)) {
-      res.status(403).json({ error: 'No tenés permisos para eliminar direcciones de este usuario' });
+    if (!esDuenoOAdmin(req, id)) {
+      res.status(403).json({ error: 'No tienes permisos para eliminar direcciones de este usuario' });
       return;
     }
 
@@ -217,7 +217,7 @@ export const removeAddress = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error eliminando dirección', error);
   }

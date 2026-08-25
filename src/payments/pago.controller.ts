@@ -3,12 +3,9 @@ import { isValidObjectId } from 'mongoose';
 import Stripe from 'stripe';
 import { Order, OrderStatus, OrderItemTipo, ESTADOS_NO_PAGABLES } from '../orders/order.model';
 import { ProductoModelo } from '../products/producto.model';
-import { UserRole } from '../users/user.model';
 import { consolidarSlotsDePedido } from '../availability/disponibilidad.service';
-import { sendServerError } from '../shared/controller.utils';
+import { sendServerError, esDuenoOAdmin } from '../shared/controller.utils';
 import { getStripe, getWebhookSecret, aCentimos, MONEDA, esReutilizable } from './stripe.utils';
-
-const esAdmin = (req: Request): boolean => req.user?.rol === UserRole.ADMIN;
 
 // POST /api/pedidos/:id/pago/iniciar
 // Crea (o reutiliza) el PaymentIntent de un pedido ya confirmado y devuelve el
@@ -28,7 +25,7 @@ export const iniciarPago = async (req: Request, res: Response): Promise<void> =>
     }
 
     // Nadie paga el pedido de otro.
-    if (!esAdmin(req) && String(order.user) !== req.user?.id) {
+    if (!esDuenoOAdmin(req, order.user)) {
       res.status(403).json({ error: 'No tienes permisos sobre este pedido' });
       return;
     }

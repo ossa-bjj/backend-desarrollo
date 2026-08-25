@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { IUser, User, UserRole, UserStatus } from './user.model';
-import { sendServerError, isOwnerOrAdmin } from '../shared/controller.utils';
+import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
 
 // POST /api/users
 export const createUser = async (req: Request, res: Response): Promise<void> => {
@@ -51,7 +51,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       metadata,
     }).save();
 
-    res.status(201).json(user);
+    res.status(201).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error creando usuario', error);
   }
@@ -61,7 +61,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 export const getAllUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
     const users = await User.find().select('-password');
-    res.status(200).json(users);
+    res.status(200).json({ success: true, data: users });
   } catch (error) {
     sendServerError(res, 'Error obteniendo usuarios', error);
   }
@@ -83,7 +83,7 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error obteniendo usuario', error);
   }
@@ -111,12 +111,12 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (!isOwnerOrAdmin(req, id)) {
-      res.status(403).json({ error: 'No tenés permisos para actualizar este usuario' });
+    if (!esDuenoOAdmin(req, id)) {
+      res.status(403).json({ error: 'No tienes permisos para actualizar este usuario' });
       return;
     }
 
-    const isAdminRequest = req.user?.rol === UserRole.ADMIN;
+    const isAdminRequest = esAdmin(req);
     const hasAdminFields =
       role !== undefined ||
       status !== undefined ||
@@ -125,7 +125,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       metadata !== undefined;
 
     if (!isAdminRequest && hasAdminFields) {
-      res.status(403).json({ error: 'No tenés permisos para actualizar campos administrativos' });
+      res.status(403).json({ error: 'No tienes permisos para actualizar campos administrativos' });
       return;
     }
 
@@ -182,7 +182,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando usuario', error);
   }
@@ -204,7 +204,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    res.status(200).json({ message: 'Usuario eliminado' });
+    res.status(200).json({ success: true, message: 'Usuario eliminado' });
   } catch (error) {
     sendServerError(res, 'Error eliminando usuario', error);
   }
@@ -221,8 +221,8 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    if (!isOwnerOrAdmin(req, id)) {
-      res.status(403).json({ error: 'No tenés permisos para cambiar esta contraseña' });
+    if (!esDuenoOAdmin(req, id)) {
+      res.status(403).json({ error: 'No tienes permisos para cambiar esta contraseña' });
       return;
     }
 
@@ -237,7 +237,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    if (req.user?.rol !== UserRole.ADMIN) {
+    if (!esAdmin(req)) {
       if (!currentPassword) {
         res.status(400).json({ error: 'La contraseña actual es requerida' });
         return;
@@ -253,7 +253,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
     user.password = newPassword;
     await user.save();
 
-    res.status(200).json({ message: 'Contraseña actualizada correctamente' });
+    res.status(200).json({ success: true, message: 'Contraseña actualizada correctamente' });
   } catch (error) {
     sendServerError(res, 'Error actualizando contraseña', error);
   }
@@ -286,7 +286,7 @@ export const updateStatus = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando estado', error);
   }

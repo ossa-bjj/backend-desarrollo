@@ -2,13 +2,10 @@ import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { DisponibilidadModelo, EstadoSlot, PATRON_HORA } from './disponibilidad.model';
 import { ServicioModelo } from '../services/servicio.model';
-import { UserRole } from '../users/user.model';
 import { liberarRetencionesCaducadas } from './disponibilidad.service';
-import { sendServerError } from '../shared/controller.utils';
+import { sendServerError, esAdmin } from '../shared/controller.utils';
 
 const MINUTOS_POR_DIA = 24 * 60;
-
-const esAdmin = (req: Request): boolean => req.user?.rol === UserRole.ADMIN;
 
 const soloTexto = (valor: unknown): string | undefined =>
   typeof valor === 'string' ? valor : undefined;

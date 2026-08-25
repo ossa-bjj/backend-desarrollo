@@ -2,14 +2,14 @@ import { Router } from 'express';
 import {
   getServicios,
   getServiciosAdmin,
-  searchServicios,
-  getServicioById,
+  buscarServicios,
+  getServicioPorCodigo,
   crearServicio,
-  updateServicio,
-  toggleActivoServicio,
-  addImagenesServicio,
-  removeImagenServicio,
-  deleteServicio,
+  actualizarServicio,
+  alternarActivoServicio,
+  anadirImagenesServicio,
+  eliminarImagenServicio,
+  eliminarServicio,
 } from './servicio.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 import upload from '../shared/file.middleware';
@@ -19,16 +19,16 @@ const router = Router();
 // --- RUTAS PUBLICAS ---
 // Las rutas literales van antes que /:codigoArticulo para que no las capture.
 router.get('/',                    getServicios);
-router.get('/search',              searchServicios);
+router.get('/search',              buscarServicios);
 router.get('/admin/all',           isAuth, isAdmin, getServiciosAdmin);
-router.get('/:codigoArticulo',     getServicioById);
+router.get('/:codigoArticulo',     getServicioPorCodigo);
 
 // --- RUTAS PROTEGIDAS ---
 router.post('/',                              isAuth, isAdmin, crearServicio);
-router.put('/:codigoArticulo',                isAuth, isAdmin, updateServicio);
-router.patch('/:codigoArticulo/activo',       isAuth, isAdmin, toggleActivoServicio);
-router.post('/:codigoArticulo/imagenes',      isAuth, isAdmin, upload.array('imagenes', 10), addImagenesServicio);
-router.delete('/:codigoArticulo/imagenes',    isAuth, isAdmin, removeImagenServicio);
-router.delete('/:codigoArticulo',             isAuth, isAdmin, deleteServicio);
+router.put('/:codigoArticulo',                isAuth, isAdmin, actualizarServicio);
+router.patch('/:codigoArticulo/activo',       isAuth, isAdmin, alternarActivoServicio);
+router.post('/:codigoArticulo/imagenes',      isAuth, isAdmin, upload.array('imagenes', 10), anadirImagenesServicio);
+router.delete('/:codigoArticulo/imagenes',    isAuth, isAdmin, eliminarImagenServicio);
+router.delete('/:codigoArticulo',             isAuth, isAdmin, eliminarServicio);
 
 export default router;

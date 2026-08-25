@@ -52,7 +52,7 @@ export const getServiciosAdmin = async (_req: Request, res: Response): Promise<v
 };
 
 // --- GET /api/servicios/search?q= (publico) ---
-export const searchServicios = async (req: Request, res: Response): Promise<void> => {
+export const buscarServicios = async (req: Request, res: Response): Promise<void> => {
   try {
     const { q } = req.query;
     if (typeof q !== 'string' || q.trim() === '') {
@@ -71,7 +71,7 @@ export const searchServicios = async (req: Request, res: Response): Promise<void
 };
 
 // --- GET /api/servicios/:codigoArticulo (publico) ---
-export const getServicioById = async (req: Request, res: Response): Promise<void> => {
+export const getServicioPorCodigo = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
@@ -111,7 +111,7 @@ export const crearServicio = async (req: Request, res: Response): Promise<void> 
 };
 
 // --- PUT /api/servicios/:codigoArticulo (admin) ---
-export const updateServicio = async (req: Request, res: Response): Promise<void> => {
+export const actualizarServicio = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
@@ -133,7 +133,7 @@ export const updateServicio = async (req: Request, res: Response): Promise<void>
 };
 
 // --- PATCH /api/servicios/:codigoArticulo/activo (admin) ---
-export const toggleActivoServicio = async (req: Request, res: Response): Promise<void> => {
+export const alternarActivoServicio = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
@@ -153,7 +153,7 @@ export const toggleActivoServicio = async (req: Request, res: Response): Promise
 };
 
 // --- POST /api/servicios/:codigoArticulo/imagenes (admin) ---
-export const addImagenesServicio = async (req: Request, res: Response): Promise<void> => {
+export const anadirImagenesServicio = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
@@ -182,7 +182,7 @@ export const addImagenesServicio = async (req: Request, res: Response): Promise<
 };
 
 // --- DELETE /api/servicios/:codigoArticulo/imagenes (admin) ---
-export const removeImagenServicio = async (req: Request, res: Response): Promise<void> => {
+export const eliminarImagenServicio = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
@@ -210,7 +210,7 @@ export const removeImagenServicio = async (req: Request, res: Response): Promise
 };
 
 // --- DELETE /api/servicios/:codigoArticulo (admin) ---
-export const deleteServicio = async (req: Request, res: Response): Promise<void> => {
+export const eliminarServicio = async (req: Request, res: Response): Promise<void> => {
   try {
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);

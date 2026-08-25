@@ -42,7 +42,7 @@ export const updateMembership = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando cuota', error);
   }
@@ -64,7 +64,7 @@ export const getMembershipPayments = async (req: Request, res: Response): Promis
       return;
     }
 
-    res.status(200).json(user.membershipPayments);
+    res.status(200).json({ success: true, data: user.membershipPayments });
   } catch (error) {
     sendServerError(res, 'Error obteniendo pagos de cuota', error);
   }
@@ -97,7 +97,7 @@ export const addMembershipPayment = async (req: Request, res: Response): Promise
       return;
     }
 
-    res.status(201).json(user);
+    res.status(201).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error añadiendo pago de cuota', error);
   }
@@ -145,7 +145,7 @@ export const updateMembershipPayment = async (req: Request, res: Response): Prom
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error actualizando pago de cuota', error);
   }
@@ -172,7 +172,7 @@ export const removeMembershipPayment = async (req: Request, res: Response): Prom
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error eliminando pago de cuota', error);
   }

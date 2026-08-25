@@ -136,3 +136,18 @@ const OrderSchema = new Schema<IOrder>(
 );
 
 export const Order = model<IOrder>('Order', OrderSchema);
+
+/**
+ * Identidad de una linea dentro de un pedido.
+ *
+ * No basta el codigo de articulo: un pedido puede llevar dos sesiones del mismo
+ * servicio a horas distintas, y son dos lineas legitimas y distinguibles. La
+ * identidad es articulo MAS horario.
+ *
+ * Existe como funcion unica a proposito. El alta del pedido y la confirmacion
+ * del presupuesto tienen que generar exactamente la misma identidad para la
+ * misma linea; si divergen, los ajustes del admin dejan de encontrar su linea
+ * en silencio, sin error, sin aplicarse.
+ */
+export const identidadLinea = (codigoArticulo: number, slotId?: string): string =>
+  `${codigoArticulo}#${slotId ?? ''}`;

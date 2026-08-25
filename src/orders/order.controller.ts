@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { isValidObjectId, Types } from 'mongoose';
-import { Order, OrderStatus, OrderItemTipo } from './order.model';
-import { UserRole } from '../users/user.model';
+import { Order, OrderStatus, OrderItemTipo, identidadLinea } from './order.model';
 import { ProductoModelo } from '../products/producto.model';
 import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import {
@@ -10,7 +9,7 @@ import {
   consolidarSlotsDePedido,
   reasignarSlot,
 } from '../availability/disponibilidad.service';
-import { sendServerError } from '../shared/controller.utils';
+import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
 
 // Linea de pedido tal y como la envia el cliente: solo dice QUE quiere y CUANTO.
 // El precio nunca viaja en la peticion, se resuelve contra el catalogo.
@@ -51,15 +50,10 @@ const esCodigoDeServicio = (codigo: number): boolean =>
 
 const redondearEuros = (valor: number): number => Math.round(valor * 100) / 100;
 
-const isAdmin = (req: Request): boolean => req.user?.rol === UserRole.ADMIN;
-
-const canAccessOrder = (req: Request, userId: unknown): boolean =>
-  isAdmin(req) || String((userId as { _id?: unknown })?._id ?? userId) === req.user?.id;
-
 // GET /api/pedidos
 export const getOrders = async (req: Request, res: Response): Promise<void> => {
   try {
-    const filter = isAdmin(req) ? {} : { user: req.user!.id };
+    const filter = esAdmin(req) ? {} : { user: req.user!.id };
     const orders = await Order.find(filter).sort({ createdAt: -1 }).populate('user', 'username email');
 
     res.status(200).json({ success: true, data: orders });
@@ -84,8 +78,8 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    if (!canAccessOrder(req, order.user)) {
-      res.status(403).json({ error: 'No tenés permisos para ver este pedido' });
+    if (!esDuenoOAdmin(req, order.user)) {
+      res.status(403).json({ error: 'No tienes permisos para ver este pedido' });
       return;
     }
 
@@ -103,7 +97,7 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
 export const createOrder = async (req: Request, res: Response): Promise<void> => {
   try {
     const { items, shippingAddress, user } = req.body;
-    const userId = isAdmin(req) && user ? user : req.user!.id;
+    const userId = esAdmin(req) && user ? user : req.user!.id;
 
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: 'El pedido debe incluir al menos una linea' });
@@ -123,13 +117,10 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       codigos.push(codigo);
     }
 
-    // La identidad de una linea es el articulo MAS su horario: dos sesiones del
-    // mismo servicio a distinta hora son dos lineas legitimas. Lo que no se
-    // admite es repetir exactamente la misma combinacion.
-    const claves = lineas.map((linea, i) => {
-      const slot = typeof linea.slotId === 'string' ? linea.slotId : '';
-      return `${codigos[i]}#${slot}`;
-    });
+    // Dos sesiones del mismo servicio a distinta hora son dos lineas legitimas.
+    // Lo que no se admite es repetir exactamente la misma combinacion.
+    const claves = lineas.map((linea, i) =>
+      identidadLinea(codigos[i], typeof linea.slotId === 'string' ? linea.slotId : undefined));
 
     if (new Set(claves).size !== claves.length) {
       res.status(400).json({ error: 'El pedido repite el mismo articulo y horario dos veces' });
@@ -285,24 +276,22 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Los ajustes se indexan por articulo MAS horario original, porque un pedido
-    // puede llevar dos sesiones del mismo servicio a horas distintas.
-    const claveLinea = (codigo: number, slotId?: string) => `${codigo}#${slotId ?? ''}`;
-
+    // Los ajustes se indexan por la identidad de la linea con su horario ORIGINAL:
+    // es la unica forma de saber a que sesion se refiere cada ajuste.
     const ajustes = new Map<string, AjusteLinea>();
     if (Array.isArray(req.body?.ajustes)) {
       for (const ajuste of req.body.ajustes as AjusteLinea[]) {
         const codigo = Number(ajuste?.codigoArticulo);
         if (!Number.isInteger(codigo)) continue;
         const slotOriginal = typeof ajuste.slotOriginalId === 'string' ? ajuste.slotOriginalId : undefined;
-        ajustes.set(claveLinea(codigo, slotOriginal), ajuste);
+        ajustes.set(identidadLinea(codigo, slotOriginal), ajuste);
       }
     }
 
     let total = 0;
 
     for (const item of order.items) {
-      const ajuste = ajustes.get(claveLinea(item.codigoArticulo, item.slotId));
+      const ajuste = ajustes.get(identidadLinea(item.codigoArticulo, item.slotId));
 
       if (ajuste) {
         if (ajuste.price !== undefined) {

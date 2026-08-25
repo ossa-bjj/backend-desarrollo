@@ -1,4 +1,4 @@
-import { Schema, model, HydratedDocument } from 'mongoose';
+import { Schema, model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 
@@ -107,8 +107,6 @@ export interface IUser {
     resetPasswordExpires?:  Date;
   };
 }
-
-export type UserDocument = HydratedDocument<IUser>;
 
 
 // --- SUBESQUEMAS ---

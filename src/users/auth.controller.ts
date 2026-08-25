@@ -27,7 +27,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       membershipPayments,
     }).save();
 
-    res.status(201).json(user);
+    res.status(201).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error en el registro', error);
   }
@@ -65,13 +65,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     });
 
     res.status(200).json({
-      token,
-      user: {
-        id:       user._id,
-        username: user.username,
-        email:    user.email,
-        role:     user.role,
-        status:   user.status,
+      success: true,
+      data: {
+        token,
+        user: {
+          id:       user._id,
+          username: user.username,
+          email:    user.email,
+          role:     user.role,
+          status:   user.status,
+        },
       },
     });
   } catch (error) {
@@ -88,7 +91,7 @@ export const me = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     sendServerError(res, 'Error obteniendo usuario', error);
   }
@@ -101,7 +104,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
     const user = await User.findOne({ email }).select('+metadata.resetPasswordToken +metadata.resetPasswordExpires');
     if (!user) {
-      res.status(200).json({ message: 'Si el correo existe, recibirás un enlace de recuperación' });
+      res.status(200).json({ success: true, message: 'Si el correo existe, recibirás un enlace de recuperación' });
       return;
     }
 
@@ -111,7 +114,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     await user.save();
 
     // TODO: enviar email real con el token.
-    res.status(200).json({ message: 'Si el correo existe, recibirás un enlace de recuperación' });
+    res.status(200).json({ success: true, message: 'Si el correo existe, recibirás un enlace de recuperación' });
   } catch (error) {
     sendServerError(res, 'Error procesando solicitud', error);
   }
@@ -142,7 +145,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     user.metadata.resetPasswordExpires = undefined;
     await user.save();
 
-    res.status(200).json({ message: 'Contraseña restablecida correctamente' });
+    res.status(200).json({ success: true, message: 'Contraseña restablecida correctamente' });
   } catch (error) {
     sendServerError(res, 'Error restableciendo contraseña', error);
   }
