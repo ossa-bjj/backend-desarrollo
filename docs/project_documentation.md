@@ -18,6 +18,7 @@
 14. [Visita guiada](#14-visita-guiada)
 15. [Estado actual](#15-estado-actual)
 16. [Mantenimiento de esta documentación](#16-mantenimiento-de-esta-documentación)
+17. [Checklist de pendientes](#17-checklist-de-pendientes)
 
 ---
 
@@ -580,27 +581,26 @@ documento; si cambia, las URL ya almacenadas siguen apuntando a la anterior.
 
 ## 15. Estado actual
 
-### Funciona y está comprobado
+Los seis dominios están implementados y responden: registro y login, perfil y
+direcciones, permisos por rol, catálogo de productos y de servicios con carga de
+imágenes, parrilla de disponibilidad con reserva de horario, pedidos con confirmación
+administrativa, cobro con tarjeta y noticias con historial. Comprobado en local contra
+MongoDB Atlas.
 
-Registro y login, perfil, permisos por rol, catálogo de productos y servicios con
-imágenes, parrilla de disponibilidad con reserva, pedidos con confirmación
-administrativa, cobro con Stripe y noticias con historial. Los seis dominios responden
-en local contra MongoDB Atlas.
+**El único método de pago operativo es Stripe.** El servidor rechaza cualquier otro
+proveedor con `400`. En el `.env` local las dos claves de Stripe están vacías, así que
+la pasarela no se puede ejercitar sin rellenarlas.
 
-### Limitaciones conocidas
+**La recuperación de contraseña genera el token pero no lo entrega**: no hay envío de
+correo implementado.
 
-Comprobadas en el código, no supuestas:
+**El registro exige `profile` en el cuerpo de la petición.** Sin él Mongoose rechaza
+con `Path 'profile' is required`, y el `.env.example` no lo menciona.
 
-- **PayPal y Bizum no cobran.** El frontend los ofrece en el selector de método de
-  pago, pero `pago.controller.ts` solo acepta `stripe` y devuelve `400` con cualquier
-  otro proveedor. En el frontend el flujo es simulado.
-- **El envío de correo no está implementado.** `auth.controller.ts` genera el token de
-  recuperación de contraseña pero no lo envía; hay un `TODO` en el sitio.
-- **Sin tests automatizados.**
-- **Stripe sin configurar en local.** `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`
-  están vacías en el `.env` actual, así que la pasarela no se puede ejercitar sin
-  rellenarlas.
-- **El registro exige `profile`** en el cuerpo y el `.env.example` no lo documenta.
+No hay tests automatizados en el repositorio.
+
+Lo que falta por hacer está recogido en el
+[Checklist de pendientes](#17-checklist-de-pendientes).
 
 ---
 
@@ -624,3 +624,33 @@ arquitectura sí: vuelve a recorrer las áreas afectadas antes de escribir.
 
 **Nunca escribas en este documento valores reales de variables sensibles.** Usa
 marcadores: `<secret>`, `<database-url>`, `<api-key>`.
+
+---
+
+## 17. Checklist de pendientes
+
+Cada línea con la evidencia que la demuestra. No incluye refactors ni mejoras de
+calidad: solo funcionalidad que falta o integraciones sin terminar.
+
+### Bloquean el uso en producción
+
+- [ ] **PayPal y Bizum no cobran.** El frontend los ofrece en el selector de método de
+      pago; el servidor solo acepta `stripe` y devuelve `400` con cualquier otro
+      proveedor. Un cliente puede creer que ha pagado. — `src/payments/pago.controller.ts`
+- [ ] **Sin claves de Stripe configuradas en local.** `STRIPE_SECRET_KEY` y
+      `STRIPE_WEBHOOK_SECRET` están vacías, así que ni el cobro ni el webhook se pueden
+      probar. — `.env`, `src/payments/stripe.utils.ts`
+
+### No bloquean
+
+- [ ] **El correo de recuperación de contraseña no se envía.** El token se genera y se
+      guarda, pero no sale del servidor. — `src/users/auth.controller.ts:116`
+- [ ] **El registro exige `profile` y no está documentado.** Una petición sin ese campo
+      falla con `Path 'profile' is required`. — `src/users/auth.controller.ts`,
+      `.env.example`
+- [ ] **Sin tests automatizados.** No hay framework declarado en `package.json` ni
+      ficheros `*.test.ts` o `*.spec.ts` en el repositorio.
+- [ ] **`api/index.ts` frente a declarar la función en `vercel.json`.** Hoy el endpoint
+      existe por el descubrimiento automático de Vercel. Declararlo explícitamente
+      permitiría borrar la carpeta. Decisión de infraestructura sin tomar. —
+      `api/index.ts`, `vercel.json`
