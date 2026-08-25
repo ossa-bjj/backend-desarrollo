@@ -8,6 +8,7 @@ import productoRouter from './src/products/producto.routes';
 import orderRouter from './src/orders/order.routes';
 import servicioRouter from './src/services/servicio.routes';
 import disponibilidadRouter from './src/availability/disponibilidad.routes';
+import noticiaRouter from './src/news/noticia.routes';
 import { getFromR2 } from './src/shared/r2.utils';
 import { validateEnvironment } from './src/shared/env';
 
@@ -73,6 +74,7 @@ app.use('/api/productos', productoRouter);
 app.use('/api/pedidos',  orderRouter);
 app.use('/api/servicios', servicioRouter);
 app.use('/api/disponibilidad', disponibilidadRouter);
+app.use('/api/noticias', noticiaRouter);
 
 // --- PROXY DE IMÁGENES R2 (público, sin auth) ---
 app.get('/api/media/*key', async (req, res) => {
