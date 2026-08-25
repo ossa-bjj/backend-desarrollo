@@ -120,6 +120,31 @@ Los servicios comparten el espacio de `codigoArticulo` con los productos, en el 
 Campos propios: `modalidad` (`presencial` · `online` · `mixta`), `duracion` en minutos,
 `plazas` por sesión, `requiereReserva` y `requiereConfirmacion`.
 
+## Noticias (`/noticias`)
+
+Una noticia nace siempre como **borrador**: `publicada` es `false` y no aparece en el
+listado público hasta que un admin la publica explícitamente.
+
+Cada cambio deja una entrada en `historial` con la acción, el autor y una foto del
+título, el contenido y el estado en ese momento. Es un registro de auditoría: se
+añade, nunca se edita.
+
+| Método | Ruta | Acceso | Descripción |
+| --- | --- | --- | --- |
+| GET | `/` | Público | Lista las noticias publicadas, más recientes primero. Filtros: `?categoria=` y `?q=`. |
+| GET | `/admin/all` | Admin | Lista todas las noticias, borradores incluidos. |
+| POST | `/` | Admin | Crea una noticia como borrador. |
+| PUT | `/:id` | Admin | Actualiza una noticia. Solo cambia los campos enviados. |
+| PATCH | `/:id/publicar` | Admin | Alterna entre publicada y borrador. |
+| DELETE | `/:id` | Admin | Elimina la noticia y su historial. |
+
+Categorías admitidas: `EVENTO`, `RESULTADO`, `CLUB`, `PROMOCION`, `GENERAL`. Cualquier
+otra devuelve `400`.
+
+Los campos de evento (`fechaEvento`, `horaInicio`, `horaFin`, `lugar`) son opcionales y
+solo tienen sentido en la categoría `EVENTO`. Las horas van en formato `HH:MM` de 24
+horas y son hora local de la academia, nunca un instante absoluto.
+
 ## Disponibilidad (`/disponibilidad`)
 
 | Método | Ruta | Acceso | Descripción |

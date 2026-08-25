@@ -19,6 +19,7 @@ backend/
 ├── api/index.ts          # Entrada serverless de Vercel
 ├── src/
 │   ├── availability/     # Huecos reservables y retención de horarios
+│   ├── news/             # Noticias con historial de cambios
 │   ├── orders/           # Pedidos y confirmación de presupuestos
 │   ├── payments/         # Stripe: PaymentIntent y webhook
 │   ├── products/         # Productos y carga de imágenes
@@ -58,7 +59,7 @@ Gracias a esto el frontend tiene un único parser (`readData` en `apiClient.ts`)
 
 | Módulo | Modelo | Identificadores |
 | --- | --- | --- |
-| `products/`, `services/`, `availability/` | `ProductoModelo`, `ServicioModelo`, `DisponibilidadModelo` | Castellano: `crearProducto`, `actualizarServicio`, `eliminarDisponibilidad` |
+| `products/`, `services/`, `availability/`, `news/` | `ProductoModelo`, `ServicioModelo`, `DisponibilidadModelo`, `NoticiaModelo` | Castellano: `crearProducto`, `actualizarServicio`, `eliminarDisponibilidad`, `crearNoticia` |
 | `orders/`, `users/` | `Order`, `User` | Inglés: `createOrder`, `updateUser`, `addAddress` |
 
 Única excepción admitida: el prefijo `get` en los lectores (`getProductos`, `getServicios`, `getDisponibilidad`), que ya era universal en el proyecto.
