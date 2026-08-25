@@ -17,6 +17,7 @@
 13. [Despliegue](#13-despliegue)
 14. [Visita guiada](#14-visita-guiada)
 15. [Estado actual](#15-estado-actual)
+15b. [Decisiones deliberadas](#15b-decisiones-deliberadas)
 16. [Mantenimiento de esta documentación](#16-mantenimiento-de-esta-documentación)
 17. [Checklist de pendientes](#17-checklist-de-pendientes)
 
@@ -112,7 +113,6 @@ backend/
 │   └── shared/               DB, JWT, R2, entorno y middleware compartido
 ├── docs/
 │   ├── api-endpoints.md      Referencia de rutas
-│   ├── calidad-backend.md    Backlog de calidad (cerrado)
 │   └── project_documentation.md   Este documento
 ├── vercel.json               Reescritura de todo el tráfico hacia /api
 └── .env.example              Plantilla de variables
@@ -601,6 +601,31 @@ No hay tests automatizados en el repositorio.
 
 Lo que falta por hacer está recogido en el
 [Checklist de pendientes](#17-checklist-de-pendientes).
+
+---
+
+## 15b. Decisiones deliberadas
+
+Cosas que parecen mejorables y no lo son. Están aquí para que nadie las «arregle»
+sin saber por qué se hicieron así.
+
+- **`availability/` es el único dominio con capa de servicio.** No es una
+  inconsistencia: su lógica la comparten pedidos y pagos, y por eso vive fuera del
+  controlador. Los demás dominios no la necesitan. Es el patrón a copiar cuando otro
+  dominio llegue a tener consumidores múltiples.
+- **El cliente de Stripe se crea bajo demanda, no al arrancar.** Así el `seed`, los
+  scripts y el desarrollo sin pasarela no exigen claves; cualquier intento real de
+  cobrar falla con un mensaje que dice qué variable falta. Mismo criterio que el
+  cliente de R2.
+- **`users/` está partido en cuatro controladores** (autenticación, identidad, perfil
+  y direcciones, membresía y pagos). Cada uno cambia por motivos distintos; juntarlos
+  crearía un fichero de mil líneas con cuatro razones para cambiar.
+- **`seed.ts` es el fichero más largo del repositorio y no es un problema.** De sus
+  770 líneas, unas 700 son datos literales y unas 45 lógica. Es una tabla de datos, y
+  las tablas de datos son largas. No hace falta trocearlo.
+- **Los códigos de artículo son un espacio compartido entre productos y servicios.**
+  Podría parecer que cada uno debería tener su propia numeración, pero un pedido
+  mezcla ambos y el código es lo que permite distinguirlos en la misma línea.
 
 ---
 
