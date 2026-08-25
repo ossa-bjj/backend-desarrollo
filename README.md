@@ -31,6 +31,40 @@ backend/
 └── vercel.json           # Reescritura hacia la función API
 ```
 
+## Convenciones
+
+Estas dos reglas se decidieron al unificar el código; respétalas al añadir un módulo o un endpoint.
+
+### Forma de la respuesta
+
+Todos los endpoints responden con el mismo envoltorio. No hay excepciones salvo el webhook de Stripe, que devuelve `{ received: true }` porque el formato lo impone Stripe.
+
+```jsonc
+// Devuelve un recurso o una colección
+{ "success": true, "data": { } }
+
+// Solo confirma una operación (borrados, cambios de contraseña)
+{ "success": true, "message": "Producto eliminado" }
+
+// Error, en cualquier código 4xx o 5xx
+{ "error": "Producto no encontrado" }
+```
+
+Gracias a esto el frontend tiene un único parser (`readData` en `apiClient.ts`). Romper el envoltorio en un endpoint obliga a añadir un caso especial allí, así que no lo hagas.
+
+### Idioma de los identificadores
+
+**El idioma de un módulo sigue al de su modelo de dominio.** No se mezclan dentro de un mismo fichero.
+
+| Módulo | Modelo | Identificadores |
+| --- | --- | --- |
+| `products/`, `services/`, `availability/` | `ProductoModelo`, `ServicioModelo`, `DisponibilidadModelo` | Castellano: `crearProducto`, `actualizarServicio`, `eliminarDisponibilidad` |
+| `orders/`, `users/` | `Order`, `User` | Inglés: `createOrder`, `updateUser`, `addAddress` |
+
+Única excepción admitida: el prefijo `get` en los lectores (`getProductos`, `getServicios`, `getDisponibilidad`), que ya era universal en el proyecto.
+
+Los nombres de campo persistidos y las rutas HTTP **no** siguen esta regla: son contrato con el frontend y con la base de datos, y se quedan como están.
+
 ## Desarrollo local
 
 ```bash

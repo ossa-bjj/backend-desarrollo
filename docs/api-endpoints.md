@@ -2,6 +2,8 @@
 
 Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <token>`; las marcadas como **admin** requieren además rol de administrador. Todas las rutas descritas provienen de los routers actuales.
 
+**Forma de la respuesta.** Toda respuesta correcta llega envuelta: `{ success: true, data }` cuando devuelve un recurso o una colección, `{ success: true, message }` cuando solo confirma la operación. Los errores responden `{ error }` en cualquier código 4xx o 5xx. La única excepción es `POST /pedidos/webhook`, cuyo `{ received: true }` lo impone Stripe.
+
 ## Estado y medios
 
 | Método | Ruta | Acceso | Descripción |
