@@ -26,7 +26,9 @@ backend/
 │   ├── services/         # Servicios vendibles (códigos 60XX)
 │   ├── users/            # Usuarios, perfiles y membresías
 │   └── shared/           # DB, JWT, R2 y middleware compartido
-├── docs/api-endpoints.md # Referencia de rutas
+├── docs/
+│   ├── project_documentation.md  # Manual completo del proyecto
+│   └── api-endpoints.md          # Referencia de rutas
 ├── index.ts              # App Express y servidor local
 ├── seed.ts               # Datos locales de ejemplo
 └── vercel.json           # Reescritura hacia la función API
