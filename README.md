@@ -1,136 +1,163 @@
-# Arturo Salas Academy — Backend
+<div align="center">
 
-API HTTP de la academia: tienda de productos, catálogo de servicios con reserva de
-horario, pedidos con cobro por Stripe y noticias del club.
+# ⚙️ Arturo Salas Academy — API
 
-Express 5 + TypeScript sobre MongoDB, desplegado como función serverless en Vercel.
-Los archivos e imágenes viven en Cloudflare R2 y se sirven por un proxy propio.
+### El motor que hay detrás de la web de la academia
 
-El frontend está en un repositorio aparte: [`ossa-bjj/frontend`](https://github.com/ossa-bjj/frontend).
+Guarda los productos, las noticias, los pedidos y las reservas. Y cobra.
 
-> **La documentación completa está en
-> [`docs/project_documentation.md`](docs/project_documentation.md)**: arquitectura,
-> lógica de negocio, modelo de datos, despliegue y qué queda pendiente.
-> La referencia de rutas, en [`docs/api-endpoints.md`](docs/api-endpoints.md).
+<br>
+
+![Express](https://img.shields.io/badge/Express-5-000000?style=for-the-badge&logo=express&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-635BFF?style=for-the-badge&logo=stripe&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+
+</div>
 
 ---
 
-## Arranque rápido
+## 👀 ¿Qué es esto?
+
+Es **la parte que no se ve**. La web bonita está en
+[`ossa-bjj/frontend`](https://github.com/ossa-bjj/frontend); esto es lo que hay debajo:
+guarda los datos, comprueba quién eres, cobra con tarjeta y sirve las imágenes.
+
+Vive en Vercel. Los datos, en MongoDB. Las fotos y archivos, en Cloudflare R2.
+
+---
+
+## 🧩 Qué sabe hacer
+
+|     | Módulo             | De qué se ocupa                                    |
+| :-: | ------------------ | -------------------------------------------------- |
+| 👤  | **Usuarios**       | Registro, login y permisos                         |
+| 🛍️  | **Productos**      | El catálogo de la tienda                           |
+| 📦  | **Pedidos**        | La compra, el cobro y su estado                    |
+| 🥋  | **Servicios**      | Clases, sesiones y seminarios                      |
+| 📅  | **Disponibilidad** | Qué huecos quedan libres para reservar             |
+| 📰  | **Noticias**       | Las publicaciones del club                         |
+| 🖼️  | **Media**          | Sirve las imágenes guardadas en la nube            |
+
+Todo cuelga de `/api`. Por ejemplo: `/api/productos`, `/api/pedidos`.
+
+---
+
+## 🚀 Ponerlo en marcha
+
+Necesitas [Node.js](https://nodejs.org), `pnpm` y una base de datos MongoDB.
 
 ```bash
 pnpm install
-cp .env.example .env     # completar con valores reales
-pnpm dev                 # http://localhost:3000, rutas bajo /api
+cp .env.example .env     # rellenar con valores reales
+pnpm dev                 # ¡listo! → http://localhost:3000
 ```
 
-### Variables de entorno
+> [!IMPORTANT]
+> Al arrancar comprueba que estén `DB_URL`, `JWT_SECRET` y todas las `R2_*`. Si falta
+> alguna **no arranca**, y te dice cuál es. Es a propósito.
 
-La aplicación **valida al arrancar** que estén `DB_URL`, `JWT_SECRET` y todas las
-`R2_*`; si falta alguna, aborta con el nombre de la que falta.
+---
+
+## ⚙️ Configuración
 
 ```env
-DB_URL=<database-url>
-JWT_SECRET=<secret>
-R2_ACCOUNT_ID=<account-id>
-R2_ACCESS_KEY_ID=<access-key>
-R2_SECRET_ACCESS_KEY=<secret-key>
+DB_URL=<direccion-de-la-base-de-datos>
+JWT_SECRET=<secreto>
+R2_ACCOUNT_ID=<id-de-cuenta>
+R2_ACCESS_KEY_ID=<clave>
+R2_SECRET_ACCESS_KEY=<clave-secreta>
 R2_BUCKET_NAME=assets
 R2_PUBLIC_DOMAIN=http://localhost:3000/api/media
 ALLOWED_ORIGINS=http://localhost:5173
-STRIPE_SECRET_KEY=<stripe-secret-key>
-STRIPE_WEBHOOK_SECRET=<stripe-webhook-secret>
+STRIPE_SECRET_KEY=<clave-secreta-de-stripe>
+STRIPE_WEBHOOK_SECRET=<secreto-del-webhook>
 ```
 
-`PORT` es opcional (3000 por defecto). `ALLOWED_ORIGINS` acepta lista separada por
-comas.
+| Variable          | Para qué sirve                                          |
+| ----------------- | ------------------------------------------------------- |
+| `DB_URL`          | Dónde está la base de datos                             |
+| `JWT_SECRET`      | Firma las sesiones de quien inicia sesión               |
+| `R2_*`            | La nube donde viven las imágenes                        |
+| `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas) |
+| `STRIPE_*`        | Para cobrar de verdad                                   |
 
-Las dos `STRIPE_*` **no se validan al arrancar**: el cliente de Stripe se crea bajo
-demanda, así que el servidor y el seed funcionan sin ellas. Lo que falla, con un
-mensaje explícito, es cualquier intento de cobrar.
+> [!NOTE]
+> Las dos de Stripe **no se comprueban al arrancar**: el servidor funciona sin ellas.
+> Lo único que fallará, con un mensaje claro, es intentar cobrar.
 
-Detalle de cada variable en el
-[manual](docs/project_documentation.md#8-configuración).
+> [!WARNING]
+> La clave **secreta** de Stripe vive solo aquí y no sale nunca de este servidor. El
+> frontend usa la publicable (`pk_`), que es otra cosa.
 
 ---
 
-## Comandos
+## 🧰 Comandos
 
-```bash
-pnpm dev            # servidor local con recarga
-pnpm build          # compila a dist/
-pnpm start          # ejecuta dist/index.js
-pnpm seed           # datos de prueba (BORRA usuarios, productos y servicios)
-npx tsc --noEmit    # comprobación de tipos
-```
+| Comando       | Qué hace                                    |
+| ------------- | ------------------------------------------- |
+| `pnpm dev`    | Arranca en local y se reinicia al guardar   |
+| `pnpm build`  | Compila a `dist/`                           |
+| `pnpm start`  | Ejecuta lo compilado                        |
+| `pnpm seed`   | Rellena la base con datos de prueba         |
 
-### Datos de prueba
+### 🌱 Datos de prueba
 
-`pnpm seed` inserta 5 usuarios, 25 productos y 5 servicios. **Vacía esas tres
-colecciones antes**: no lo ejecutes sobre datos que importen.
+`pnpm seed` mete 5 usuarios, 25 productos y 5 servicios para poder trastear.
 
-| Usuario | Contraseña | Rol |
-| --- | --- | --- |
-| `admin` | `Admin1234!` | administrador |
-| `cliente_regular` | `Cliente1234!` | usuario |
+| Usuario           | Contraseña     | Rol           |
+| ----------------- | -------------- | ------------- |
+| `admin`           | `Admin1234!`   | administrador |
+| `cliente_regular` | `Cliente1234!` | usuario       |
 
-Credenciales de desarrollo local: no deben reutilizarse en producción.
+> [!CAUTION]
+> **Antes de meter nada, vacía usuarios, productos y servicios.** No lo ejecutes sobre
+> datos que te importen. Y esas contraseñas son solo para tu ordenador: nunca en
+> producción.
 
 ---
 
-## Pasarela de pago en local
+## 💳 Probar los pagos en tu ordenador
 
-El webhook necesita que la CLI de Stripe reenvíe los eventos a tu máquina:
+Stripe avisa de que una tarjeta se ha cobrado llamando a este servidor. Para que ese
+aviso llegue a tu máquina, hace falta la CLI de Stripe abierta en otra terminal:
 
 ```bash
 stripe listen --forward-to localhost:3000/api/pedidos/webhook
 ```
 
-Ese comando imprime el `whsec_` de la sesión, que es el valor de
-`STRIPE_WEBHOOK_SECRET`. **Sin él los eventos nunca llegan y los pedidos se quedan sin
-marcar como pagados aunque Stripe acepte la tarjeta**, porque quien los marca es el
-webhook y no el navegador.
+Ese comando imprime un código que empieza por `whsec_`: ese es tu
+`STRIPE_WEBHOOK_SECRET`.
 
-Para las pruebas, la tarjeta `4242 4242 4242 4242` con cualquier fecha futura y
-cualquier CVC.
+> [!IMPORTANT]
+> **Sin ese aviso, los pedidos se quedan sin pagar aunque Stripe acepte la tarjeta.**
+> Quien marca el pedido como pagado es el aviso, no el navegador.
 
-En producción el endpoint se da de alta en el panel de Stripe apuntando a
-`https://<dominio>/api/pedidos/webhook`. **El `whsec_` de producción es distinto del
-que imprime `stripe listen`**; copiar el de la CLI hace que la verificación de firma
-falle en silencio.
-
-La clave **secreta** vive solo aquí. El frontend usa únicamente la publicable (`pk_`),
-porque Vite incrusta sus variables en el bundle que descarga el navegador.
+Para probar, la tarjeta `4242 4242 4242 4242`, cualquier fecha futura y cualquier CVC.
 
 ---
 
-## Convenciones
+## 📖 ¿Quieres la chicha?
 
-Toda la API responde con el mismo envoltorio:
+<div align="center">
 
-```json
-{ "success": true, "data": { } }
-```
+### 👉 [**Manual completo del proyecto**](docs/project_documentation.md) 👈
 
-y los errores como `{ "error": "…", "detail": "…" }`. Los errores de servidor pasan
-todos por `sendServerError`, y la regla de permisos (admin o dueño del recurso) está
-implementada una sola vez, en `src/shared/controller.utils.ts`.
+### 📡 [**Referencia de todas las rutas**](docs/api-endpoints.md)
 
-Los identificadores van en **castellano** en `products/`, `services/`, `availability/`
-y `news/`; en **inglés** en `orders/` y `users/`, porque sus modelos se llaman `Order`
-y `User`. Los nombres de campo de la API no cambian de idioma: son contrato con el
-frontend.
+</div>
 
-Más detalle en el [manual](docs/project_documentation.md#5-lógica-de-negocio).
+En el manual está todo lo serio: arquitectura, lógica de negocio, modelo de datos,
+despliegue y **el checklist de lo que queda pendiente**.
+
+> [!NOTE]
+> Al desplegar: **primero este backend, después el frontend**. Las respuestas viajan
+> envueltas en `{ success, data }`, y un frontend nuevo contra un backend viejo rompe
+> el login.
 
 ---
 
-## Despliegue
-
-Vercel. `vercel.json` reescribe todo el tráfico hacia `/api`, y `api/index.ts` es la
-función que reexporta la app.
-
-**Backend primero, frontend después**: el envoltorio `{ success, data }` es un
-contrato, y el frontend nuevo contra un backend anterior rompe el login.
-
-Procedimiento completo en el
-[manual](docs/project_documentation.md#13-despliegue).
+<div align="center">
+<sub>Hecho para <b>Arturo Salas Academy</b> 🥋</sub>
+</div>
