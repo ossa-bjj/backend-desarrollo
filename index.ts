@@ -59,11 +59,11 @@ app.use(async (_req, res, next) => {
   try {
     await connectDB();
     next();
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error de conexion a la DB:', error);
     res.status(503).json({
       error: 'Servicio no disponible: fallo de conexion a la base de datos',
-      details: error?.message || String(error),
+      details: (error as Error).message,
     });
   }
 });
@@ -87,9 +87,12 @@ app.get('/api/media/*key', async (req, res) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     stream.pipe(res);
-  } catch (err: any) {
-    if (err.name === 'NoSuchKey') return res.status(404).json({ error: 'Archivo no encontrado' });
-    console.error('Error al obtener archivo de R2:', err.message);
+  } catch (error) {
+    // R2 (compatible con S3) responde NoSuchKey cuando el objeto no existe.
+    if ((error as Error).name === 'NoSuchKey') {
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+    console.error('Error al obtener archivo de R2:', (error as Error).message);
     res.status(500).json({ error: 'Error al obtener archivo' });
   }
 });
