@@ -2,7 +2,8 @@
 
 Revisión de calidad estructural del backend: cohesión de módulos, legibilidad, olores de código, sobreingeniería y restos legacy. **No cubre corrección funcional ni seguridad**; esos hallazgos van por separado.
 
-- **Alcance:** rama `desarrollo`, estado completo del módulo (no un diff). 28 ficheros, 4.557 líneas: los 9 controladores, los 5 modelos, `disponibilidad.service.ts`, todo `shared/`, `stripe.utils.ts`, `index.ts` y las 5 tablas de rutas. `seed.ts` revisado por estructura, no dato a dato.
+- **Alcance:** rama `desarrollo`, estado completo del módulo (no un diff). 28 ficheros, 4.557 líneas: los 9 controladores, los 5 modelos, `disponibilidad.service.ts`, todo `shared/`, `stripe.utils.ts`, `index.ts`, `api/index.ts` y las 5 tablas de rutas. `seed.ts` revisado por estructura, no dato a dato.
+- **Revisado, con decisión abierta:** `api/index.ts` (una línea, `export { default } from '../index'`) es hoy la entrada serverless. Funciona por el descubrimiento automático de Vercel: todo fichero bajo `api/` es un endpoint, y `vercel.json` reescribe `/(.*)` hacia `/api`. **No es obligatorio.** La alternativa es declarar la función en `vercel.json` apuntando a `index.ts` y borrar la carpeta. Mientras `vercel.json` no lo declare, borrar el fichero sin más deja el despliegue sin endpoint. Decisión de infraestructura, no de este backlog.
 - **Fecha:** 2026-08-24
 - **Fuera de alcance:** dependencias, `tsconfig`, validez de los datos del seed, y la coherencia con el frontend salvo donde un ticket la toca explícitamente.
 
