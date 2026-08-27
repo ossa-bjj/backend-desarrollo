@@ -15,7 +15,8 @@ import { ServicioModelo, ModalidadServicio } from './src/services/servicio.model
 import { resolveDbUrl } from './src/shared/db';
 import { uploadToR2 } from './src/shared/r2.utils';
 
-// Se sube en seed() y se asigna la URL devuelta por R2
+// Key del objeto en R2. La sube seed() y se asigna en el remapeo previo a
+// insertar: los literales de arriba nacen sin imagenes a proposito.
 let IMG_DEFAULT = '';
 
 //  USUARIOS
@@ -326,7 +327,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Guantes de boxeo',
     marca: 'Venum',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['destacado', 'boxeo', 'MMA'],
   },
   {
@@ -338,7 +339,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Cascos',
     marca: 'RDX',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['boxeo', 'sparring', 'kickboxing'],
   },
   {
@@ -350,7 +351,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Espinilleras',
     marca: 'Fairtex',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['muay thai', 'kickboxing'],
   },
   {
@@ -362,7 +363,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Vendas',
     marca: 'Fighter',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['boxeo', 'MMA', 'kickboxing'],
   },
   {
@@ -374,7 +375,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Bucales',
     marca: 'Shock Doctor',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['boxeo', 'MMA', 'BJJ', 'sparring'],
   },
   {
@@ -386,7 +387,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Rodilleras',
     marca: 'Rehband',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ', 'grappling', 'MMA'],
   },
   {
@@ -398,7 +399,7 @@ const productos = [
     category: Categoria.PROTECCIONES,
     subcategoria: 'Guantillas',
     marca: 'RDX',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['MMA', 'grappling', 'BJJ'],
   },
 
@@ -412,7 +413,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Rashguards',
     marca: 'Tatami',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ', 'grappling'],
   },
   {
@@ -424,7 +425,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Shorts MMA',
     marca: 'Venum',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['MMA', 'kickboxing'],
   },
   {
@@ -436,7 +437,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Camisetas técnicas',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
   {
@@ -448,7 +449,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Mallas',
     marca: 'Tatami',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ', 'grappling'],
   },
   {
@@ -460,7 +461,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Shorts BJJ',
     marca: 'Scramble',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ', 'grappling', 'destacado'],
   },
   {
@@ -472,7 +473,7 @@ const productos = [
     category: Categoria.ROPA_ENTRENAMIENTO,
     subcategoria: 'Rashguards',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ', 'MMA', 'lifestyle'],
   },
 
@@ -486,7 +487,7 @@ const productos = [
     category: Categoria.ROPA_CALLE,
     subcategoria: 'Sudaderas',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['destacado', 'lifestyle'],
   },
   {
@@ -498,7 +499,7 @@ const productos = [
     category: Categoria.ROPA_CALLE,
     subcategoria: 'Camisetas',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
   {
@@ -510,7 +511,7 @@ const productos = [
     category: Categoria.ROPA_CALLE,
     subcategoria: 'Pantalones',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
   {
@@ -522,7 +523,7 @@ const productos = [
     category: Categoria.ROPA_CALLE,
     subcategoria: 'Gorras',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
 
@@ -536,7 +537,7 @@ const productos = [
     category: Categoria.CALZADO,
     subcategoria: 'Botas de boxeo',
     marca: 'Adidas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['destacado', 'boxeo'],
   },
   {
@@ -548,7 +549,7 @@ const productos = [
     category: Categoria.CALZADO,
     subcategoria: 'Zapatillas de lucha',
     marca: 'Asics',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lucha', 'grappling'],
   },
   {
@@ -560,7 +561,7 @@ const productos = [
     category: Categoria.CALZADO,
     subcategoria: 'Sandalias',
     marca: 'Fighter',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
 
@@ -574,7 +575,7 @@ const productos = [
     category: Categoria.ACCESORIOS,
     subcategoria: 'Mochilas',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['destacado', 'lifestyle'],
   },
   {
@@ -586,7 +587,7 @@ const productos = [
     category: Categoria.ACCESORIOS,
     subcategoria: 'Cinturones',
     marca: 'Tatami',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['BJJ'],
   },
   {
@@ -598,7 +599,7 @@ const productos = [
     category: Categoria.ACCESORIOS,
     subcategoria: 'Acondicionamiento',
     marca: 'RDX',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['boxeo', 'MMA', 'kickboxing'],
   },
   {
@@ -610,7 +611,7 @@ const productos = [
     category: Categoria.ACCESORIOS,
     subcategoria: 'Hidratación',
     marca: 'Artur Salas',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['lifestyle'],
   },
   {
@@ -622,7 +623,7 @@ const productos = [
     category: Categoria.ACCESORIOS,
     subcategoria: 'Acondicionamiento',
     marca: 'Fighter',
-    imagenes: [IMG_DEFAULT],
+    imagenes: [] as string[],
     tags: ['boxeo', 'MMA'],
   },
 ];
