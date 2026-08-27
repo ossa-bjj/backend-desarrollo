@@ -732,7 +732,7 @@ async function seed() {
   // Subir imagen por defecto a R2
   const imgPath = resolve(__dirname, 'src/assets/nodisponible.jpg');
   const imgBuffer = readFileSync(imgPath);
-  IMG_DEFAULT = await uploadToR2(imgBuffer, 'nodisponible.jpg', 'image/jpeg');
+  IMG_DEFAULT = await uploadToR2(imgBuffer, 'nodisponible.jpg', 'image/jpeg', 'defaults/nodisponible.jpg');
   console.log('Imagen por defecto subida a R2:', IMG_DEFAULT);
 
   await User.deleteMany({});
