@@ -574,8 +574,19 @@ del stream a la respuesta, con `Cache-Control` de un año e `immutable` — las 
 llevan marca de tiempo, así que un fichero nunca cambia de contenido. Si R2 responde
 `NoSuchKey`, el proxy devuelve `404`.
 
-**Qué hay que saber para tocarlo.** `R2_PUBLIC_DOMAIN` es la base que se guarda en cada
-documento; si cambia, las URL ya almacenadas siguen apuntando a la anterior.
+**Qué hay que saber para tocarlo.** En base de datos se guarda solo la *key* del objeto
+(`uploads/…`), nunca la URL completa: la URL pública se compone al leer con el
+`R2_PUBLIC_DOMAIN` del entorno, en el `toJSON` de cada modelo. Cambiar de dominio no
+exige migrar datos. Las filas antiguas guardaban la URL absoluta del entorno donde se
+subió el fichero; `normalizarUrlMedia` les extrae la key venga del dominio que venga, así
+que conviven ambos formatos. Por el mismo motivo `keyFromPublicUrl` no depende de
+`R2_PUBLIC_DOMAIN`: si dependiera, al cambiar de dominio dejaría de reconocer las URL
+antiguas y los borrados fallarían en silencio, dejando huérfanos en el bucket.
+
+La única clave sin marca de tiempo es `defaults/nodisponible.jpg`, que la semilla
+sobrescribe en cada ejecución para no acumular una copia por siembra. Al servirse con
+`immutable`, un cambio de esa imagen tardaría en propagarse a los navegadores que ya la
+tengan cacheada.
 
 ---
 

@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import { normalizarUrlMedia } from '../shared/r2.utils';
 
 export enum Categoria {
   PROTECCIONES = "PROTECCIONES", // Guantes, guantillas, bucales, espinilleras
@@ -75,6 +76,18 @@ const ProductoSchema = new Schema<IProduct>(
   {
     timestamps: true,
     versionKey: false,
+    // Las imagenes se guardan como key del bucket. La URL publica depende del
+    // entorno, asi que se resuelve aqui, en el borde de salida, en vez de
+    // congelarse dentro del dato al subir el fichero.
+    toJSON: {
+      transform: (_doc: unknown, ret: Record<string, unknown>) => {
+        const imagenes = ret['imagenes'];
+        if (Array.isArray(imagenes)) {
+          ret['imagenes'] = imagenes.map((img) => normalizarUrlMedia(String(img)));
+        }
+        return ret;
+      },
+    },
   },
 );
 

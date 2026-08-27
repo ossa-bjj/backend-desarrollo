@@ -3,6 +3,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { Order, OrderStatus, OrderItemTipo, identidadLinea } from './order.model';
 import { ProductoModelo } from '../products/producto.model';
 import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
+import { normalizarUrlMedia } from '../shared/r2.utils';
 import {
   retenerSlots,
   liberarSlotsDePedido,
@@ -146,7 +147,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       catalogo.set(producto.codigoArticulo, {
         name:     producto.name,
         price:    producto.price,
-        image:    producto.imagenes?.[0],
+        image:    normalizarUrlMedia(producto.imagenes?.[0] ?? ''),
         tipo:     OrderItemTipo.PRODUCTO,
         maximo:   producto.stock,
         etiqueta: 'unidades en stock',
@@ -160,7 +161,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       catalogo.set(servicio.codigoArticulo, {
         name:     servicio.nombre,
         price:    servicio.precio,
-        image:    servicio.imagenes?.[0],
+        image:    normalizarUrlMedia(servicio.imagenes?.[0] ?? ''),
         tipo:     OrderItemTipo.SERVICIO,
         maximo:   servicio.plazas,
         etiqueta: 'plazas disponibles',
