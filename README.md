@@ -80,7 +80,7 @@ STRIPE_WEBHOOK_SECRET=<secreto-del-webhook>
 | `DB_URL`          | Dónde está la base de datos                             |
 | `JWT_SECRET`      | Firma las sesiones de quien inicia sesión               |
 | `R2_*`            | La nube donde viven las imágenes                        |
-| `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas) |
+| `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín) |
 | `STRIPE_*`        | Para cobrar de verdad                                   |
 
 > [!NOTE]
