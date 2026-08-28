@@ -11,6 +11,7 @@ import disponibilidadRouter from './src/availability/disponibilidad.routes';
 import noticiaRouter from './src/news/noticia.routes';
 import { getFromR2 } from './src/shared/r2.utils';
 import { validateEnvironment } from './src/shared/env';
+import { corsOptions, esOrigenPermitido, registrarEstadoCors } from './src/shared/cors';
 
 validateEnvironment();
 
@@ -24,35 +25,10 @@ app.use('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // --- CORS ---
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-
-    const originsEnv = process.env.ALLOWED_ORIGINS || '';
-    const configuredOrigins = originsEnv
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
-
-    const allowedList = configuredOrigins.length > 0
-      ? configuredOrigins
-      : ['http://localhost:5173', 'http://localhost:3000'];
-
-    const isAllowed =
-      allowedList.includes('*') ||
-      allowedList.includes(origin);
-
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS bloqueado para el origen: ${origin}`);
-      callback(new Error(`CORS: origen no permitido → ${origin}`));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true,
-}));
+// La politica vive en src/shared/cors.ts. Un origen no permitido se rechaza
+// sin cabeceras CORS, no con un error: asi el resto de la API sigue en pie.
+app.use(cors(corsOptions));
+registrarEstadoCors();
 
 // --- CONEXION A DB (lazy, cacheada entre invocaciones serverless) ---
 app.use(async (_req, res, next) => {
@@ -101,6 +77,18 @@ app.get('/', (_req, res) => {
   res.json({
     status: 'ok',
     api: mongoose.connection.readyState === 1 ? 'conectado' : 'desconectado',
+  });
+});
+
+// Diagnostico de CORS: responde si el origen que llama esta admitido. No
+// revela la lista, solo el veredicto para quien pregunta, que es lo mismo que
+// ya deduce del ACAO de cualquier respuesta. Convierte el "no conecta y no se
+// por que" en una comprobacion de un segundo desde la consola del navegador.
+app.get('/api/cors-check', (req, res) => {
+  const origen = req.headers.origin;
+  res.json({
+    origen: origen ?? null,
+    permitido: origen ? esOrigenPermitido(origen) : true,
   });
 });
 

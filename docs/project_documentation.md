@@ -347,7 +347,7 @@ Todas las variables se leen de `.env` en local y del panel de Vercel en producci
 | `R2_PUBLIC_DOMAIN` | Base pública de las URL de archivo | Sí |
 | `PORT` | Puerto HTTP local (por defecto 3000) | No |
 | `ENVIRONMENT` | `development` o `production` | No |
-| `ALLOWED_ORIGINS` | Orígenes CORS separados por coma; `*` permite todos | No |
+| `ALLOWED_ORIGINS` | Orígenes CORS separados por coma; admite comodín (`https://*.midominio.dev`) y `*` permite todos | Sí |
 | `STRIPE_SECRET_KEY` | Clave secreta de Stripe | No — sin ella no se puede cobrar |
 | `STRIPE_WEBHOOK_SECRET` | Secreto de firma del webhook | No — sin él el webhook rechaza |
 
