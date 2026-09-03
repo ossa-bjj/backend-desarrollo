@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { IUser, User, UserRole, UserStatus } from './user.model';
+import { leerCriteriosUsuario, listarUsuarios } from './user.service';
 import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
 
 // POST /api/users
@@ -57,11 +58,18 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
-// GET /api/users
-export const getAllUsers = async (_req: Request, res: Response): Promise<void> => {
+// GET /api/users?q=&username=&email=&role=&status=&customer=&license=&pagina=&limite=
+export const buscarUsuarios = async (req: Request, res: Response): Promise<void> => {
   try {
-    const users = await User.find().select('-password');
-    res.status(200).json({ success: true, data: users });
+    const lectura = leerCriteriosUsuario(req.query);
+    if (!lectura.ok) {
+      res.status(400).json({ error: lectura.error });
+      return;
+    }
+
+    const { usuarios, total, pagina, limite } = await listarUsuarios(lectura.criterios);
+
+    res.status(200).json({ success: true, data: usuarios, meta: { total, pagina, limite } });
   } catch (error) {
     sendServerError(res, 'Error obteniendo usuarios', error);
   }

@@ -8,7 +8,7 @@ import {
 } from './auth.controller';
 import {
   createUser,
-  getAllUsers,
+  buscarUsuarios,
   getUserById,
   updateUser,
   updatePassword,
@@ -45,7 +45,7 @@ router.post('/reset-password',  resetPassword);
 
 router.get('/me',                         isAuth,          me);
 router.post('/',                          isAuth, isAdmin, createUser);
-router.get('/',                           isAuth, isAdmin, getAllUsers);
+router.get('/',                           isAuth, isAdmin, buscarUsuarios);
 router.get('/:id',                        isAuth, isAdmin, getUserById);
 router.put('/:id',                        isAuth,          updateUser);
 router.patch('/:id/password',             isAuth,          updatePassword);
