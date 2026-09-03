@@ -1,15 +1,12 @@
 import { Router } from 'express';
 import {
   getProductos,
+  getSiguienteCodigo,
   getProductoPorCodigo,
   crearProducto,
   actualizarProducto,
   eliminarProducto,
-  buscarProductos,
-  getProductosPorCategoria,
-  getProductosPorMarca,
   actualizarStock,
-  getProductosDestacados,
   anadirImagenes,
   eliminarImagen,
 } from './producto.controller';
@@ -19,11 +16,12 @@ import upload from '../shared/file.middleware';
 const router = Router();
 
 // --- RUTAS PÚBLICAS ---
+// El listado acepta todos los filtros por query string y son combinables, que
+// es lo que las antiguas rutas /search, /destacados, /categoria/:categoria y
+// /marca/:marca no permitían: cada una resolvía un criterio y solo uno.
 router.get('/',                              getProductos);
-router.get('/search',                        buscarProductos);
-router.get('/destacados',                    getProductosDestacados);
-router.get('/categoria/:categoria',          getProductosPorCategoria);
-router.get('/marca/:marca',                  getProductosPorMarca);
+// Antes de /:codigoArticulo, o el parámetro se comería la ruta.
+router.get('/siguiente-codigo',              isAuth, isAdmin, getSiguienteCodigo);
 router.get('/:codigoArticulo',               getProductoPorCodigo);
 
 // --- RUTAS PROTEGIDAS ---
