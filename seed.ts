@@ -1,6 +1,4 @@
 import 'dotenv/config';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import mongoose from 'mongoose';
 import {
   CustomerOrigin,
@@ -13,11 +11,17 @@ import {
 import { ProductoModelo, Categoria } from './src/products/producto.model';
 import { ServicioModelo, ModalidadServicio } from './src/services/servicio.model';
 import { resolveDbUrl } from './src/shared/db';
-import { uploadToR2 } from './src/shared/r2.utils';
 
-// Key del objeto en R2. La sube seed() y se asigna en el remapeo previo a
-// insertar: los literales de arriba nacen sin imagenes a proposito.
-let IMG_DEFAULT = '';
+/**
+ * Key del placeholder en R2. La imagen ya vive en el bucket bajo esta key fija,
+ * asi que la semilla la referencia en vez de resubirla: guardar una copia en el
+ * repositorio solo para reenviarla en cada siembra obligaba a mantener el mismo
+ * fichero en dos sitios y a que el binario viajara en el control de versiones.
+ *
+ * Se asigna en el remapeo previo a insertar: los literales de abajo nacen sin
+ * imagenes a proposito.
+ */
+const IMG_DEFAULT = 'defaults/nodisponible.jpg';
 
 //  USUARIOS
 
@@ -729,12 +733,6 @@ async function seed() {
   const dbUrl = resolveDbUrl();
   await mongoose.connect(dbUrl);
   console.log('Conectado a MongoDB');
-
-  // Subir imagen por defecto a R2
-  const imgPath = resolve(__dirname, 'src/assets/nodisponible.jpg');
-  const imgBuffer = readFileSync(imgPath);
-  IMG_DEFAULT = await uploadToR2(imgBuffer, 'nodisponible.jpg', 'image/jpeg', 'defaults/nodisponible.jpg');
-  console.log('Imagen por defecto subida a R2:', IMG_DEFAULT);
 
   await User.deleteMany({});
   await ProductoModelo.deleteMany({});
