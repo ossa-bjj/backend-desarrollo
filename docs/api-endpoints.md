@@ -4,7 +4,9 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 **Forma de la respuesta.** Toda respuesta correcta llega envuelta: `{ success: true, data }` cuando devuelve un recurso o una colección, `{ success: true, message }` cuando solo confirma la operación. Los errores responden `{ error }` en cualquier código 4xx o 5xx. La única excepción es `POST /pedidos/webhook`, cuyo `{ received: true }` lo impone Stripe.
 
-**Listados paginados.** `GET /productos` y `GET /users` añaden `meta: { total, pagina, limite }`. `data` es la página; `total` cuenta todo lo que cumple el filtro. Ambos aceptan `?pagina=` (desde 1) y `?limite=` (100 por defecto, 500 como máximo); un valor ilegible cae al valor por defecto en lugar de dar error. **Todo el filtrado se resuelve en el servidor**: el cliente envía criterios y pinta lo que recibe, sin recortarlo.
+**Errores.** Un fallo no previsto responde `500 { error }` con un mensaje genérico. El detalle se registra en el servidor y no viaja al cliente: los mensajes de Mongoose nombran colecciones, campos e índices, y eso es un mapa gratis de la aplicación.
+
+**Listados paginados.** `GET /productos`, `GET /users` y `GET /pedidos` añaden `meta: { total, pagina, limite }`. `data` es la página; `total` cuenta todo lo que cumple el filtro. Ambos aceptan `?pagina=` (desde 1) y `?limite=` (100 por defecto, 500 como máximo); un valor ilegible cae al valor por defecto en lugar de dar error. **Todo el filtrado se resuelve en el servidor**: el cliente envía criterios y pinta lo que recibe, sin recortarlo.
 
 ## Estado y medios
 
@@ -18,7 +20,7 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
 | POST | `/register` | Público | Registra un usuario. |
-| POST | `/login` | Público | Inicia sesión y obtiene token. |
+| POST | `/login` | Público | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada. |
 | POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. |
 | POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
 | GET | `/me` | Autenticado | Devuelve el usuario de la sesión. |
@@ -64,7 +66,7 @@ código y categoría al crear y al actualizar.
 
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
-| GET | `/` | Autenticado | Lista pedidos según el usuario autenticado. Un admin ve todos. |
+| GET | `/` | Autenticado | Lista pedidos, más recientes primero. Filtros: `?status=`, `?desde=`/`?hasta=` (`YYYY-MM-DD`, ambos inclusive) y, **solo para un admin**, `?usuario=`. A quien no es admin el servidor le impone su propia identidad como dueño, así que `?usuario=` no sirve para leer pedidos ajenos. Paginado (50 por defecto, 200 máximo). |
 | POST | `/` | Autenticado | Crea un pedido. El cuerpo solo lleva `items: [{ codigoArticulo, quantity, slotId?, slotLabel? }]` y `shippingAddress?`: nombre, precio y total se resuelven en el servidor contra el catálogo. |
 | GET | `/:id` | Autenticado | Obtiene un pedido por identificador. |
 | PATCH | `/:id/confirmar` | Admin | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. |
