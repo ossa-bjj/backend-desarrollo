@@ -7,6 +7,7 @@ import {
   regexContiene,
   textoDeQuery,
 } from '../shared/consulta.utils';
+import { soloCampos } from '../shared/actualizacion.utils';
 
 /**
  * Toda la logica de seleccion, filtrado y paginacion del catalogo de productos.
@@ -203,27 +204,9 @@ const CAMPOS_ACTUALIZABLES = [
   'category', 'subcategoria', 'marca', 'imagenes', 'tags',
 ] as const;
 
-/**
- * Deja pasar solo los campos conocidos.
- *
- * Sin esta lista el cuerpo entra tal cual en findOneAndUpdate, y Mongoose
- * interpreta como operadores las claves que empiezan por `$`: un cuerpo con
- * `{"$unset": {"price": ""}}` deja el producto sin precio saltandose el
- * `required` del esquema, porque `runValidators` solo comprueba los campos que
- * se asignan, no los que se borran.
- */
-export const soloCamposActualizables = (cuerpo: unknown): Partial<IProduct> => {
-  if (typeof cuerpo !== 'object' || cuerpo === null || Array.isArray(cuerpo)) return {};
-
-  const entrada = cuerpo as Record<string, unknown>;
-  const cambios: Record<string, unknown> = {};
-
-  for (const campo of CAMPOS_ACTUALIZABLES) {
-    if (entrada[campo] !== undefined) cambios[campo] = entrada[campo];
-  }
-
-  return cambios as Partial<IProduct>;
-};
+/** Deja pasar solo los campos conocidos. Ver `shared/actualizacion.utils.ts`. */
+export const soloCamposActualizables = (cuerpo: unknown): Partial<IProduct> =>
+  soloCampos<IProduct>(cuerpo, CAMPOS_ACTUALIZABLES);
 
 
 // --- Documento suelto ---
