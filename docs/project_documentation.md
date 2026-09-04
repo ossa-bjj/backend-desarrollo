@@ -361,6 +361,7 @@ Todas las variables se leen de `.env` en local y del panel de Vercel en producci
 | `PAYPAL_CLIENT_ID` | Credencial de la app REST de PayPal | No — sin ella no se puede cobrar con PayPal |
 | `PAYPAL_CLIENT_SECRET` | Credencial de la app REST de PayPal | No |
 | `PAYPAL_ENTORNO` | `live` apunta a la API real; cualquier otro valor, al sandbox | No |
+| `PAYPAL_WEBHOOK_ID` | Verifica la firma de los avisos de PayPal | No — sin él se rechaza el webhook entero |
 | `RESEND_API_KEY` | Envío del correo de recuperación | No — sin ella el correo no sale |
 | `CORREO_REMITENTE` | Remitente de ese correo, dominio verificado en Resend | No |
 
@@ -576,26 +577,37 @@ dinero esté cobrado: la respuesta del navegador se puede perder, falsear o inte
 como `pagado` es el **webhook** (`payment_intent.succeeded`), que llega servidor a
 servidor y va firmado.
 
-PayPal no encaja en ese molde: en el flujo de captura no manda webhook, y el dinero se
-mueve en la llamada que hace el propio backend a `/capture`. Por eso el navegador ahí sí
-dispara la acción —pidiendo `POST /:id/pago/capturar`—, pero **sigue sin decidir nada**:
-lo que se cree no es lo que diga el navegador, sino lo que responda PayPal a esa captura,
-servidor a servidor.
+PayPal no encaja en ese molde: el dinero se mueve en la llamada que hace el propio backend
+a `/capture`. Por eso el navegador ahí sí dispara la acción —pidiendo
+`POST /:id/pago/capturar`—, pero **sigue sin decidir nada**: lo que se cree no es lo que
+diga el navegador, sino lo que responda PayPal a esa captura, servidor a servidor.
 
-Los dos caminos desembocan en la misma función, `marcarPagado`. Es el único sitio donde un
+Y como el navegador puede no volver nunca —el cliente aprueba y cierra la pestaña—, PayPal
+avisa además por su cuenta con `CHECKOUT.ORDER.APPROVED`. Ese aviso captura igual. Así que
+un pago de PayPal tiene **dos** finales posibles, y pueden llegar los dos, en cualquier
+orden.
+
+Los tres caminos desembocan en la misma función, `marcarPagado`. Es el único sitio donde un
 pedido pasa a `pagado`, y por tanto el único donde se consolidan los horarios y se
 descuenta el stock. Si cada proveedor consolidara por su cuenta, acabarían divergiendo.
 
-**Qué hay que saber para tocarlo.** El webhook necesita el cuerpo **sin parsear** para
-verificar la firma: por eso `index.ts` monta `express.raw()` en
+**Qué hay que saber para tocarlo.** El webhook de Stripe necesita el cuerpo **sin parsear**
+para verificar la firma: por eso `index.ts` monta `express.raw()` en
 `/api/pedidos/webhook` **antes** de `express.json()`. Ese orden no es cosmético; al
-revés, la firma no valida nunca.
+revés, la firma no valida nunca. Y se monta con `app.post`, no con `app.use`: `use` casa
+por prefijo, así que le entregaría también un Buffer al webhook de PayPal, que cuelga de
+`/webhook/paypal` y sí quiere el cuerpo parseado.
+
+Los dos proveedores se autentican de forma distinta. Stripe firma con un secreto
+compartido; PayPal no, y hay que preguntarle a él si la firma es buena. Sin
+`PAYPAL_WEBHOOK_ID` no se puede verificar nada, así que su webhook **se rechaza** en vez de
+creérselo: falla cerrado.
 
 Todo es idempotente porque tiene que serlo: Stripe reintenta el webhook hasta recibir un
-2xx, y el cliente puede recargar la página de retorno de PayPal. Si el pedido ya está
-`pagado`, `marcarPagado` sale sin hacer nada; y la captura además viaja con un
-`PayPal-Request-Id` fijo, de modo que PayPal devuelve la captura que ya hizo en vez de
-cobrar dos veces.
+2xx, el cliente puede recargar la página de retorno de PayPal, y el aviso de PayPal puede
+cruzarse con esa vuelta. Si el pedido ya está `pagado`, `marcarPagado` sale sin hacer nada;
+y la captura además viaja con un `PayPal-Request-Id` fijo, de modo que PayPal devuelve la
+captura que ya hizo en vez de cobrar dos veces.
 
 ### D. Las imágenes no se sirven desde R2
 
@@ -724,10 +736,10 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       vacías: el flujo responde con normalidad y el correo no sale, avisándolo en el log.
       Es lo único que falta — el resto del circuito (token, enlace, pantalla `/recuperar`,
       cambio de contraseña) está probado de punta a punta. — `.env`, `src/shared/correo.ts`
-- [ ] **Desde «Pedidos» solo se puede pagar con tarjeta.** El checkout ofrece los tres
-      métodos, pero `usePagoPedido` —el pago de un pedido ya confirmado— sigue pidiendo
-      `stripe` fijo. No es una regresión, era así antes; queda como inconsistencia entre
-      las dos pantallas. — `frontend/src/features/pago-pedido/model/usePagoPedido.ts`
+- [ ] **Webhook de PayPal sin registrar.** El código está y verifica la firma, pero falta
+      darlo de alta en el panel apuntando a `/api/pedidos/webhook/paypal`, suscrito a
+      `CHECKOUT.ORDER.APPROVED`, y copiar su id en `PAYPAL_WEBHOOK_ID`. Sin él, un cliente
+      que apruebe y no vuelva al sitio deja el pedido a medias. — panel de PayPal, `.env`
 - [ ] **El registro exige `profile` y no está documentado.** Una petición sin ese campo
       falla con `Path 'profile' is required`. — `src/users/auth.controller.ts`,
       `.env.example`

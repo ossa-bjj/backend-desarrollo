@@ -105,6 +105,7 @@ pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
 | POST | `/:id/pago/iniciar` | Autenticado | Arranca el cobro sobre el total confirmado. Cuerpo: `metodo` (`stripe` · `bizum` · `paypal`) y `returnUrl` (obligatoria en `paypal`). Con Stripe y Bizum crea o reutiliza el PaymentIntent y devuelve `{ proveedor, clientSecret, orderId }`; con PayPal crea la orden y devuelve `{ proveedor, approveUrl, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
 | POST | `/:id/pago/capturar` | Autenticado | Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo. Devuelve el pedido. `409` si el pedido no tiene un pago de PayPal pendiente o si PayPal no completó el cobro. Sobre un pedido ya pagado responde `200` sin volver a cobrar. |
 | POST | `/webhook` | Público | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token. |
+| POST | `/webhook/paypal` | Público | Recibe los eventos de PayPal, suscrito a `CHECKOUT.ORDER.APPROVED`. Cierra el pago del cliente que aprueba y **no vuelve al sitio**. |
 
 **`returnUrl` se valida contra `ALLOWED_ORIGINS`**, la misma lista que gobierna CORS: la
 manda el navegador, y sin esa comprobación el endpoint serviría para mandar a un cliente a
@@ -118,8 +119,20 @@ hasta recibir un 2xx, y el cliente puede recargar la página de retorno de PayPa
 Un intento de Stripe solo se reutiliza si se creó **para el mismo método**: uno de Bizum no
 admite tarjeta, y al revés tampoco.
 
-El webhook necesita el cuerpo sin parsear, de ahí el `express.raw` montado sobre esa ruta
-antes de `express.json()` en `index.ts`.
+Un pago de PayPal se puede cerrar por dos caminos —la vuelta del cliente y el webhook—, y
+pueden llegar los dos, en cualquier orden. Da igual: ambos desembocan en la misma función,
+que corta en seco si el pedido ya está pagado, y la captura viaja con un `PayPal-Request-Id`
+fijo que hace que PayPal devuelva la que ya hizo en vez de repetirla.
+
+Los dos webhooks se autentican distinto, y por eso quieren el cuerpo distinto:
+
+- **Stripe** firma con un secreto compartido y necesita los bytes **sin parsear**. De ahí el
+  `express.raw` sobre esa ruta antes de `express.json()` en `index.ts`, montado con `post`
+  y no con `use` — `use` casa por prefijo y le habría robado el cuerpo al de PayPal.
+- **PayPal** no firma con un secreto: hay que preguntarle a él si la firma es buena,
+  mandándole las cabeceras `paypal-*` junto al evento. Ese cuerpo sí llega parseado.
+  Sin `PAYPAL_WEBHOOK_ID` no hay forma de verificar nada, así que el aviso **se rechaza**:
+  falla cerrado, nunca abierto.
 
 ## Servicios (`/servicios`)
 

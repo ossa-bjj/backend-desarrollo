@@ -76,6 +76,7 @@ STRIPE_WEBHOOK_SECRET=<secreto-del-webhook>
 PAYPAL_CLIENT_ID=<client-id>
 PAYPAL_CLIENT_SECRET=<client-secret>
 PAYPAL_ENTORNO=sandbox
+PAYPAL_WEBHOOK_ID=<webhook-id>
 RESEND_API_KEY=<api-key>
 CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 ```
@@ -87,7 +88,7 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 | `R2_*`            | La nube donde viven las imágenes                        |
 | `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín) |
 | `STRIPE_*`        | Cobrar con tarjeta y con Bizum                          |
-| `PAYPAL_*`        | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox |
+| `PAYPAL_*`        | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox. `PAYPAL_WEBHOOK_ID` verifica la firma de sus avisos: sin él el webhook se rechaza entero |
 | `RESEND_API_KEY`  | Enviar el correo de recuperación de contraseña          |
 | `CORREO_REMITENTE`| Remitente de ese correo, con el dominio verificado en Resend |
 
