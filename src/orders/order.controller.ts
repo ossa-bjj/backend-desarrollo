@@ -7,6 +7,7 @@ import { normalizarUrlMedia } from '../shared/r2.utils';
 import {
   retenerSlots,
   liberarSlotsDePedido,
+  liberarSlot,
   consolidarSlotsDePedido,
   reasignarSlot,
 } from '../availability/disponibilidad.service';
@@ -297,45 +298,93 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    let total = 0;
+    // --- 1. Emparejar cada linea con su ajuste y validarlo, sin tocar nada ---
+    // El emparejamiento se hace aqui, mientras los horarios siguen siendo los
+    // originales, que es por lo que estan indexados los ajustes. Y se valida
+    // todo antes de escribir: un precio invalido en la ultima linea no puede
+    // dejar movido el horario de la primera, con la agenda escrita y el pedido no.
+    const ajustePorLinea = new Map<(typeof order.items)[number], AjusteLinea>();
 
     for (const item of order.items) {
       const ajuste = ajustes.get(identidadLinea(item.codigoArticulo, item.slotId));
+      if (!ajuste) continue;
+      ajustePorLinea.set(item, ajuste);
+
+      if (ajuste.price !== undefined) {
+        const precio = Number(ajuste.price);
+        if (!Number.isFinite(precio) || precio < 0) {
+          res.status(400).json({ error: `Precio no valido para el articulo ${item.codigoArticulo}` });
+          return;
+        }
+      }
+
+      if (ajuste.quantity !== undefined) {
+        const cantidad = Number(ajuste.quantity);
+        if (!Number.isInteger(cantidad) || cantidad < 1) {
+          res.status(400).json({ error: `Cantidad no valida para el articulo ${item.codigoArticulo}` });
+          return;
+        }
+      }
+    }
+
+    // --- 2. Mover los horarios, anotando lo hecho para poder deshacerlo ---
+    // Es el unico paso que escribe fuera del pedido, y puede fallar a mitad:
+    // que otro cliente se quede el hueco es una carrera normal, no un error.
+    const movidos: Array<{ item: (typeof order.items)[number]; anterior?: string }> = [];
+
+    const deshacerMovimientos = async (): Promise<void> => {
+      for (const { item, anterior } of movidos.reverse()) {
+        if (anterior) {
+          const vuelto = await reasignarSlot(order._id, item.slotId, anterior);
+          // Si otro cliente se ha quedado el hueco de origen en el intervalo, la
+          // vuelta atras no es posible. No hay nada que hacer desde aqui, pero
+          // no puede quedar invisible: es una reserva que hay que revisar a mano.
+          if (!vuelto) {
+            console.error(
+              `No se pudo devolver el horario ${anterior} al pedido ${order._id}: ` +
+                `la linea ${item.codigoArticulo} se queda sin su hueco original.`,
+            );
+          }
+        } else if (item.slotId) {
+          // La linea no tenia horario antes: el nuevo se suelta sin mas.
+          await liberarSlot(order._id, item.slotId);
+        }
+        item.slotId = anterior;
+      }
+    };
+
+    for (const [item, ajuste] of ajustePorLinea) {
+      // Cambio de horario: solo tiene sentido en lineas de servicio.
+      if (!ajuste.slotId || item.tipo !== OrderItemTipo.SERVICIO || ajuste.slotId === item.slotId) {
+        continue;
+      }
+
+      const anterior = item.slotId;
+      const reasignado = await reasignarSlot(order._id, anterior, ajuste.slotId);
+      if (!reasignado) {
+        await deshacerMovimientos();
+        res.status(409).json({
+          error: `El horario elegido para "${item.name}" ya no esta disponible`,
+        });
+        return;
+      }
+
+      item.slotId    = ajuste.slotId;
+      item.slotLabel = typeof ajuste.slotLabel === 'string' ? ajuste.slotLabel : item.slotLabel;
+      movidos.push({ item, anterior });
+    }
+
+    // --- 3. Aplicar precios y cantidades, ya sin nada que pueda fallar ---
+    let total = 0;
+
+    for (const item of order.items) {
+      const ajuste = ajustePorLinea.get(item);
 
       if (ajuste) {
-        if (ajuste.price !== undefined) {
-          const precio = Number(ajuste.price);
-          if (!Number.isFinite(precio) || precio < 0) {
-            res.status(400).json({ error: `Precio no valido para el articulo ${item.codigoArticulo}` });
-            return;
-          }
-          item.price = redondearEuros(precio);
-        }
-
-        if (ajuste.quantity !== undefined) {
-          const cantidad = Number(ajuste.quantity);
-          if (!Number.isInteger(cantidad) || cantidad < 1) {
-            res.status(400).json({ error: `Cantidad no valida para el articulo ${item.codigoArticulo}` });
-            return;
-          }
-          item.quantity = cantidad;
-        }
-
+        if (ajuste.price !== undefined) item.price = redondearEuros(Number(ajuste.price));
+        if (ajuste.quantity !== undefined) item.quantity = Number(ajuste.quantity);
         if (typeof ajuste.motivoAjuste === 'string') {
           item.motivoAjuste = ajuste.motivoAjuste.trim() || undefined;
-        }
-
-        // Cambio de horario: solo tiene sentido en lineas de servicio.
-        if (ajuste.slotId && item.tipo === OrderItemTipo.SERVICIO && ajuste.slotId !== item.slotId) {
-          const reasignado = await reasignarSlot(order._id, item.slotId, ajuste.slotId);
-          if (!reasignado) {
-            res.status(409).json({
-              error: `El horario elegido para "${item.name}" ya no esta disponible`,
-            });
-            return;
-          }
-          item.slotId    = ajuste.slotId;
-          item.slotLabel = typeof ajuste.slotLabel === 'string' ? ajuste.slotLabel : item.slotLabel;
         }
       }
 
@@ -347,7 +396,16 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
     order.confirmadoEn  = new Date();
     order.confirmadoPor = req.user?.id ? new Types.ObjectId(req.user.id) : undefined;
     order.motivoRechazo = undefined;
-    await order.save();
+
+    try {
+      await order.save();
+    } catch (error) {
+      // Guardar es lo ultimo que puede fallar, y si falla los horarios ya estan
+      // movidos: hay que devolverlos antes de propagar, o la agenda quedaria
+      // reflejando una confirmacion que no llego a existir.
+      await deshacerMovimientos();
+      throw error;
+    }
 
     // La reserva deja de ser provisional: ya no caduca sola.
     await consolidarSlotsDePedido(order._id);
