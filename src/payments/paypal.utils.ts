@@ -161,6 +161,59 @@ export const crearOrdenPayPal = async (
   return { id: orden.id, approveUrl: enlace.href };
 };
 
+/**
+ * Comprueba que un webhook viene de PayPal de verdad.
+ *
+ * PayPal no firma con un secreto compartido como Stripe: hay que preguntarle a
+ * el si la firma es buena, mandandole las cabeceras del aviso y el evento tal
+ * como llego. Sin esta comprobacion, cualquiera que conozca la URL podria dar
+ * un pedido por cobrado con una peticion falsa.
+ *
+ * Falla cerrado: si no hay `PAYPAL_WEBHOOK_ID` no se puede verificar nada, asi
+ * que el aviso se rechaza en vez de creerselo.
+ */
+export const firmaDeWebhookEsValida = async (
+  cabeceras: Record<string, string | string[] | undefined>,
+  evento: unknown,
+): Promise<boolean> => {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) {
+    console.error('Falta PAYPAL_WEBHOOK_ID: no se puede verificar el webhook de PayPal');
+    return false;
+  }
+
+  const leer = (nombre: string): string => {
+    const valor = cabeceras[nombre];
+    return Array.isArray(valor) ? (valor[0] ?? '') : (valor ?? '');
+  };
+
+  const cuerpo = {
+    auth_algo:         leer('paypal-auth-algo'),
+    cert_url:          leer('paypal-cert-url'),
+    transmission_id:   leer('paypal-transmission-id'),
+    transmission_sig:  leer('paypal-transmission-sig'),
+    transmission_time: leer('paypal-transmission-time'),
+    webhook_id:        webhookId,
+    webhook_event:     evento,
+  };
+
+  if (Object.entries(cuerpo).some(([clave, valor]) => clave !== 'webhook_event' && !valor)) {
+    console.error('Webhook de PayPal sin las cabeceras de firma completas');
+    return false;
+  }
+
+  try {
+    const { verification_status } = await llamar<{ verification_status: string }>(
+      '/v1/notifications/verify-webhook-signature',
+      { method: 'POST', body: JSON.stringify(cuerpo) },
+    );
+    return verification_status === 'SUCCESS';
+  } catch (error) {
+    console.error('No se pudo verificar la firma del webhook de PayPal:', (error as Error).message);
+    return false;
+  }
+};
+
 export interface CapturaPayPal {
   estado: string;
   completada: boolean;

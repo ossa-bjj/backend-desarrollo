@@ -7,7 +7,7 @@ import { consolidarSlotsDePedido } from '../availability/disponibilidad.service'
 import { sendServerError, esDuenoOAdmin } from '../shared/controller.utils';
 import { esOrigenPermitido } from '../shared/cors';
 import { getStripe, getWebhookSecret, aCentimos, MONEDA, esReutilizable } from './stripe.utils';
-import { crearOrdenPayPal, capturarOrdenPayPal } from './paypal.utils';
+import { crearOrdenPayPal, capturarOrdenPayPal, firmaDeWebhookEsValida } from './paypal.utils';
 
 /**
  * Metodos que el cliente puede elegir.
@@ -283,12 +283,52 @@ const marcarPagado = async (
   await descontarStock(order.items);
 };
 
+/**
+ * Cobra la orden de PayPal de un pedido y lo consolida.
+ *
+ * La comparten los dos caminos por los que puede cerrarse un pago de PayPal: la
+ * vuelta del cliente al sitio y el webhook que avisa de que aprobo. Los dos
+ * pueden llegar, y en cualquier orden, asi que esto tiene que poder ejecutarse
+ * dos veces sin cobrar dos veces: corta en seco si el pedido ya esta pagado, y
+ * la captura viaja con un `PayPal-Request-Id` fijo que hace que PayPal devuelva
+ * la que ya hizo en lugar de repetirla.
+ */
+const cerrarPagoDePayPal = async (
+  order: Pedido,
+): Promise<{ ok: true } | { ok: false; estado: number; error: string }> => {
+  if (order.status === OrderStatus.PAGADO) return { ok: true };
+
+  if (order.pago?.proveedor !== 'paypal' || !order.pago.paymentIntentId) {
+    return { ok: false, estado: 409, error: 'Este pedido no tiene un pago de PayPal que capturar' };
+  }
+
+  const captura = await capturarOrdenPayPal(order.pago.paymentIntentId);
+
+  if (!captura.completada) {
+    order.pago.estado = captura.estado;
+    await order.save();
+    return { ok: false, estado: 409, error: `PayPal no completo el cobro (estado: ${captura.estado})` };
+  }
+
+  // La orden que PayPal acaba de cobrar tiene que ser la de este pedido: sin
+  // esta comprobacion, una orden ajena aprobada por el mismo cliente daria
+  // por pagado un pedido que nadie ha cobrado.
+  if (captura.pedidoId && captura.pedidoId !== String(order._id)) {
+    console.error(`Captura de PayPal cruzada: orden de ${captura.pedidoId} sobre el pedido ${order._id}`);
+    return { ok: false, estado: 409, error: 'El cobro no corresponde a este pedido' };
+  }
+
+  await marcarPagado(String(order._id), {
+    referencia: order.pago.paymentIntentId,
+    estado:     captura.estado,
+    proveedor:  'paypal',
+  });
+
+  return { ok: true };
+};
+
 // POST /api/pedidos/:id/pago/capturar
 // Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo.
-//
-// PayPal no manda webhook en este flujo: el dinero se mueve en esta llamada, y
-// por eso la captura es idempotente en los dos lados (PayPal-Request-Id alli,
-// el corte por estado PAGADO aqui).
 export const capturarPago = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -308,44 +348,64 @@ export const capturarPago = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Recargar la pagina de retorno no es un error: el pedido ya esta cobrado.
-    if (order.status === OrderStatus.PAGADO) {
-      res.status(200).json({ success: true, data: order });
+    const resultado = await cerrarPagoDePayPal(order);
+    if (!resultado.ok) {
+      res.status(resultado.estado).json({ error: resultado.error });
       return;
     }
-
-    if (order.pago?.proveedor !== 'paypal' || !order.pago.paymentIntentId) {
-      res.status(409).json({ error: 'Este pedido no tiene un pago de PayPal que capturar' });
-      return;
-    }
-
-    const captura = await capturarOrdenPayPal(order.pago.paymentIntentId);
-
-    if (!captura.completada) {
-      order.pago.estado = captura.estado;
-      await order.save();
-      res.status(409).json({ error: `PayPal no completo el cobro (estado: ${captura.estado})` });
-      return;
-    }
-
-    // La orden que PayPal acaba de cobrar tiene que ser la de este pedido: sin
-    // esta comprobacion, una orden ajena aprobada por el mismo cliente daria
-    // por pagado un pedido que nadie ha cobrado.
-    if (captura.pedidoId && captura.pedidoId !== String(order._id)) {
-      console.error(`Captura de PayPal cruzada: orden de ${captura.pedidoId} sobre el pedido ${order._id}`);
-      res.status(409).json({ error: 'El cobro no corresponde a este pedido' });
-      return;
-    }
-
-    await marcarPagado(String(order._id), {
-      referencia: order.pago.paymentIntentId,
-      estado:     captura.estado,
-      proveedor:  'paypal',
-    });
 
     res.status(200).json({ success: true, data: await Order.findById(order._id) });
   } catch (error) {
     sendServerError(res, 'Error capturando el pago', error);
+  }
+};
+
+// POST /api/pedidos/webhook/paypal
+// Ruta publica: la autentica la firma de PayPal, no un token nuestro.
+//
+// Existe para el cliente que aprueba el pago y no vuelve al sitio —cierra la
+// pestana, se queda sin bateria—. Sin esto su orden quedaba aprobada y sin
+// capturar: nadie le cobraba, pero tampoco nadie se enteraba de que el pedido
+// se habia quedado a medias.
+export const paypalWebhook = async (req: Request, res: Response): Promise<void> => {
+  const evento = req.body as {
+    event_type?: string;
+    resource?: { id?: string; custom_id?: string; purchase_units?: Array<{ custom_id?: string }> };
+  };
+
+  if (!(await firmaDeWebhookEsValida(req.headers, evento))) {
+    // Puede ser un intento de dar por cobrado un pedido que nadie ha pagado.
+    console.error('Webhook de PayPal con firma no valida');
+    res.status(400).json({ error: 'Firma no valida' });
+    return;
+  }
+
+  try {
+    // El id de nuestro pedido viaja como `custom_id`: en la orden va dentro de
+    // `purchase_units`, y en la captura, suelto en el propio recurso.
+    const pedidoId =
+      evento.resource?.purchase_units?.[0]?.custom_id ?? evento.resource?.custom_id;
+
+    if (evento.event_type === 'CHECKOUT.ORDER.APPROVED' && pedidoId && isValidObjectId(pedidoId)) {
+      const order = await Order.findById(pedidoId);
+
+      if (!order) {
+        console.warn(`Webhook de PayPal para un pedido inexistente: ${pedidoId}`);
+      } else {
+        const resultado = await cerrarPagoDePayPal(order);
+        if (!resultado.ok) {
+          // No se responde con error: PayPal reintentaria un aviso que no va a
+          // mejorar por repetirse. Queda en el log para mirarlo a mano.
+          console.error(`No se pudo cerrar por webhook el pedido ${pedidoId}: ${resultado.error}`);
+        }
+      }
+    }
+
+    // PayPal reintenta mientras no reciba un 2xx.
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Error procesando el webhook de PayPal:', error);
+    res.status(500).json({ error: 'Error procesando el evento' });
   }
 };
 

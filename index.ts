@@ -24,10 +24,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 // --- MIDDLEWARES ---
-// Stripe firma el cuerpo tal cual lo envia, asi que el webhook necesita el
+// Stripe firma el cuerpo tal cual lo envia, asi que su webhook necesita el
 // Buffer sin parsear. express.json() detecta que el cuerpo ya se leyo y lo
 // respeta, por eso este orden importa.
-app.use('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
+//
+// Se monta con `post` y no con `use` a proposito: `use` casa por prefijo, y
+// entonces el webhook de PayPal —que cuelga de /webhook/paypal y si quiere el
+// cuerpo parseado— recibiria tambien un Buffer.
+app.post('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // --- CORS ---
