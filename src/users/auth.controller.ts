@@ -12,6 +12,11 @@ import {
 } from './acceso.service';
 import { generateToken } from '../shared/token.utils';
 import { sendServerError } from '../shared/controller.utils';
+import { esOrigenPermitido } from '../shared/cors';
+import { enviarCorreoDeRecuperacion } from '../shared/correo';
+
+/** El mismo minimo que declara el esquema de User. */
+const LARGO_MINIMO_CONTRASENA = 6;
 
 // POST /api/users/register
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -125,14 +130,33 @@ export const me = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+/**
+ * Base del enlace de recuperacion.
+ *
+ * Sale del `Origin` de quien pide, validado contra la misma lista que gobierna
+ * CORS: sin esa comprobacion, una peticion desde fuera podria hacer que el
+ * correo llevase a un dominio ajeno con un token valido dentro.
+ */
+const baseDelFrontend = (req: Request): string | null => {
+  const origen = req.headers.origin;
+  return origen && esOrigenPermitido(origen) ? origen.replace(/\/+$/, '') : null;
+};
+
 // POST /api/users/forgot-password
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+  // La respuesta es siempre la misma: decir si el correo existe convertiria
+  // este endpoint en un censo de usuarios registrados.
+  const respuestaNeutra = {
+    success: true,
+    message: 'Si el correo existe, recibirás un enlace de recuperación',
+  };
+
   try {
     const { email } = req.body;
 
     const user = await User.findOne({ email }).select('+metadata.resetPasswordToken +metadata.resetPasswordExpires');
     if (!user) {
-      res.status(200).json({ success: true, message: 'Si el correo existe, recibirás un enlace de recuperación' });
+      res.status(200).json(respuestaNeutra);
       return;
     }
 
@@ -141,8 +165,18 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     user.metadata.resetPasswordExpires = new Date(Date.now() + 3_600_000);
     await user.save();
 
-    // TODO: enviar email real con el token.
-    res.status(200).json({ success: true, message: 'Si el correo existe, recibirás un enlace de recuperación' });
+    const base = baseDelFrontend(req);
+    if (!base) {
+      console.error(`Recuperacion sin enlace para ${email}: origen no permitido o ausente.`);
+      res.status(200).json(respuestaNeutra);
+      return;
+    }
+
+    // Si el correo no sale queda registrado en el log del servidor, pero al
+    // cliente se le responde igual: no puede saber si el fallo fue suyo.
+    await enviarCorreoDeRecuperacion(user.email, `${base}/recuperar?token=${token}`);
+
+    res.status(200).json(respuestaNeutra);
   } catch (error) {
     sendServerError(res, 'Error procesando solicitud', error);
   }
@@ -155,6 +189,16 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     if (!token || !newPassword) {
       res.status(400).json({ error: 'Token y nueva contraseña requeridos' });
+      return;
+    }
+
+    // El modelo ya exige este minimo, pero su ValidationError sale por el
+    // manejador generico como un 500: culpar al servidor de una contrasena
+    // corta manda a buscar la averia donde no esta.
+    if (typeof newPassword !== 'string' || newPassword.length < LARGO_MINIMO_CONTRASENA) {
+      res.status(400).json({
+        error: `La contraseña debe tener al menos ${LARGO_MINIMO_CONTRASENA} caracteres`,
+      });
       return;
     }
 
