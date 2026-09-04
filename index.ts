@@ -104,6 +104,18 @@ app.use((_req, res) => {
 });
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // express.json() rechaza los cuerpos mal formados o demasiado grandes con un
+  // error que ya trae su propio codigo 4xx. Devolver 500 en esos casos culpa al
+  // servidor de un fallo del cliente, y manda a buscar la averia donde no esta.
+  const { status, statusCode } = err as Error & { status?: number; statusCode?: number };
+  const codigoDelCliente = status ?? statusCode;
+
+  if (codigoDelCliente && codigoDelCliente >= 400 && codigoDelCliente < 500) {
+    console.warn(`Peticion rechazada (${codigoDelCliente}): ${err.message}`);
+    res.status(codigoDelCliente).json({ error: 'Peticion mal formada' });
+    return;
+  }
+
   console.error(err.message);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
