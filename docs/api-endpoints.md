@@ -6,6 +6,8 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 **Errores.** Un fallo no previsto responde `500 { error }` con un mensaje genérico. El detalle se registra en el servidor y no viaja al cliente: los mensajes de Mongoose nombran colecciones, campos e índices, y eso es un mapa gratis de la aplicación.
 
+Un cuerpo mal formado o demasiado grande no llega a ningún controlador: lo rechaza `express.json()` y el manejador de errores conserva **su** código (`400`, `413`) en vez de convertirlo en un `500`. Un fallo del cliente no debe mandar a buscar la avería en el servidor.
+
 **Listados paginados.** `GET /productos`, `GET /users` y `GET /pedidos` añaden `meta: { total, pagina, limite }`. `data` es la página; `total` cuenta todo lo que cumple el filtro. Ambos aceptan `?pagina=` (desde 1) y `?limite=` (100 por defecto, 500 como máximo); un valor ilegible cae al valor por defecto en lugar de dar error. **Todo el filtrado se resuelve en el servidor**: el cliente envía criterios y pinta lo que recibe, sin recortarlo.
 
 ## Estado y medios
@@ -21,7 +23,7 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 | --- | --- | --- | --- |
 | POST | `/register` | Público | Registra un usuario. |
 | POST | `/login` | Público | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada. |
-| POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. |
+| POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. Envía al correo un enlace a `<origen>/recuperar?token=`, válido una hora; el origen sale de la cabecera `Origin` validada contra `ALLOWED_ORIGINS`. Responde siempre lo mismo exista o no el correo, para no convertirse en un censo de usuarios. Sin `RESEND_API_KEY` el correo no sale y queda avisado en el log. |
 | POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
 | GET | `/me` | Autenticado | Devuelve el usuario de la sesión. |
 | POST | `/` | Admin | Crea un usuario. |
@@ -69,7 +71,7 @@ código y categoría al crear y al actualizar.
 | GET | `/` | Autenticado | Lista pedidos, más recientes primero. Filtros: `?status=`, `?desde=`/`?hasta=` (`YYYY-MM-DD`, ambos inclusive) y, **solo para un admin**, `?usuario=`. A quien no es admin el servidor le impone su propia identidad como dueño, así que `?usuario=` no sirve para leer pedidos ajenos. Paginado (50 por defecto, 200 máximo). |
 | POST | `/` | Autenticado | Crea un pedido. El cuerpo solo lleva `items: [{ codigoArticulo, quantity, slotId?, slotLabel? }]` y `shippingAddress?`: nombre, precio y total se resuelven en el servidor contra el catálogo. |
 | GET | `/:id` | Autenticado | Obtiene un pedido por identificador. |
-| PATCH | `/:id/confirmar` | Admin | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. |
+| PATCH | `/:id/confirmar` | Admin | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. **O se aplica entera o no se aplica nada**: valida todos los ajustes antes de escribir, y si un cambio de horario falla a mitad (`409`, otro cliente se quedó el hueco) devuelve los ya movidos a su sitio. |
 | PATCH | `/:id/rechazar` | Admin | Rechaza un pedido pendiente de confirmación. Cuerpo: `motivo`. Libera los horarios retenidos. |
 | PATCH | `/:id/status` | Admin | Cambia el estado de un pedido. |
 | DELETE | `/:id` | Admin | Elimina un pedido y libera sus horarios. |
@@ -79,7 +81,8 @@ código y categoría al crear y al actualizar.
 ```
 pendiente_confirmacion  →  el pedido lleva un servicio que un admin debe tarificar
 pendiente               →  confirmado y pagable; el total ya es definitivo
-pagado                  →  cobro confirmado por el webhook de Stripe
+pagado                  →  cobro confirmado por el webhook (Stripe, Bizum) o por la
+                           captura (PayPal)
 preparando → enviado → entregado
 cancelado / rechazado   →  liberan los horarios retenidos
 ```
@@ -93,17 +96,30 @@ sesiones del mismo servicio a horas distintas.
 
 ## Pagos (`/pedidos`)
 
+Tres métodos, dos caminos. `stripe` (tarjeta) y `bizum` se cobran con Stripe y los cierra
+su webhook; `paypal` se cobra fuera del sitio y lo cierra la captura. Bizum no es una
+pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
+
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
-| POST | `/:id/pago/iniciar` | Autenticado | Crea o reutiliza el PaymentIntent de Stripe sobre el total confirmado. Cuerpo: `metodo` (solo `stripe`). Devuelve `{ proveedor, clientSecret, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
+| POST | `/:id/pago/iniciar` | Autenticado | Arranca el cobro sobre el total confirmado. Cuerpo: `metodo` (`stripe` · `bizum` · `paypal`) y `returnUrl` (obligatoria en `paypal`). Con Stripe y Bizum crea o reutiliza el PaymentIntent y devuelve `{ proveedor, clientSecret, orderId }`; con PayPal crea la orden y devuelve `{ proveedor, approveUrl, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
+| POST | `/:id/pago/capturar` | Autenticado | Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo. Devuelve el pedido. `409` si el pedido no tiene un pago de PayPal pendiente o si PayPal no completó el cobro. Sobre un pedido ya pagado responde `200` sin volver a cobrar. |
 | POST | `/webhook` | Público | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token. |
 
-El webhook es la única fuente de verdad del cobro: al recibir `payment_intent.succeeded`
-marca el pedido como pagado, consolida los horarios reservados y descuenta el stock de las
-líneas de producto. Es idempotente, porque Stripe reintenta hasta recibir un 2xx.
+**`returnUrl` se valida contra `ALLOWED_ORIGINS`**, la misma lista que gobierna CORS: la
+manda el navegador, y sin esa comprobación el endpoint serviría para mandar a un cliente a
+un dominio ajeno con aspecto de vuelta del pago.
 
-Necesita el cuerpo sin parsear, de ahí el `express.raw` montado sobre esa ruta antes de
-`express.json()` en `index.ts`.
+El pedido pasa a `pagado` en un único punto del código, venga el aviso del webhook de
+Stripe o de la captura de PayPal: ahí se consolidan los horarios reservados y se descuenta
+el stock de las líneas de producto. Es idempotente por los dos lados — Stripe reintenta
+hasta recibir un 2xx, y el cliente puede recargar la página de retorno de PayPal.
+
+Un intento de Stripe solo se reutiliza si se creó **para el mismo método**: uno de Bizum no
+admite tarjeta, y al revés tampoco.
+
+El webhook necesita el cuerpo sin parsear, de ahí el `express.raw` montado sobre esa ruta
+antes de `express.json()` en `index.ts`.
 
 ## Servicios (`/servicios`)
 

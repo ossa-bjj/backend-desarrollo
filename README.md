@@ -73,6 +73,11 @@ R2_PUBLIC_DOMAIN=http://localhost:3000/api/media
 ALLOWED_ORIGINS=http://localhost:5173
 STRIPE_SECRET_KEY=<clave-secreta-de-stripe>
 STRIPE_WEBHOOK_SECRET=<secreto-del-webhook>
+PAYPAL_CLIENT_ID=<client-id>
+PAYPAL_CLIENT_SECRET=<client-secret>
+PAYPAL_ENTORNO=sandbox
+RESEND_API_KEY=<api-key>
+CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 ```
 
 | Variable          | Para qué sirve                                          |
@@ -81,11 +86,21 @@ STRIPE_WEBHOOK_SECRET=<secreto-del-webhook>
 | `JWT_SECRET`      | Firma las sesiones de quien inicia sesión               |
 | `R2_*`            | La nube donde viven las imágenes                        |
 | `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín) |
-| `STRIPE_*`        | Para cobrar de verdad                                   |
+| `STRIPE_*`        | Cobrar con tarjeta y con Bizum                          |
+| `PAYPAL_*`        | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox |
+| `RESEND_API_KEY`  | Enviar el correo de recuperación de contraseña          |
+| `CORREO_REMITENTE`| Remitente de ese correo, con el dominio verificado en Resend |
 
 > [!NOTE]
-> Las dos de Stripe **no se comprueban al arrancar**: el servidor funciona sin ellas.
-> Lo único que fallará, con un mensaje claro, es intentar cobrar.
+> Las de Stripe, PayPal y correo **no se comprueban al arrancar**: el servidor funciona
+> sin ellas. Sin las de pago, lo único que falla —con un mensaje claro— es intentar
+> cobrar. Sin las de correo, la recuperación de contraseña responde con normalidad pero
+> el correo no sale, y queda avisado en el log.
+
+> [!IMPORTANT]
+> **Bizum se cobra a través de Stripe**, no es una pasarela aparte y no tiene variables
+> propias. Hay que activarlo en el panel de Stripe (*Configuración › Métodos de pago*).
+> Solo admite euros y cuentas españolas.
 
 > [!WARNING]
 > La clave **secreta** de Stripe vive solo aquí y no sale nunca de este servidor. El
