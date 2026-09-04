@@ -8,7 +8,7 @@ import {
   confirmOrder,
   rejectOrder,
 } from './order.controller';
-import { iniciarPago, stripeWebhook } from '../payments/pago.controller';
+import { iniciarPago, capturarPago, stripeWebhook } from '../payments/pago.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 
 const router = Router();
@@ -17,7 +17,9 @@ const router = Router();
 // El webhook va antes que las rutas con :id y sin isAuth: lo autentica la firma
 // de Stripe. Su cuerpo llega en crudo (ver express.raw en index.ts).
 router.post('/webhook', stripeWebhook);
-router.post('/:id/pago/iniciar', isAuth, iniciarPago);
+router.post('/:id/pago/iniciar',  isAuth, iniciarPago);
+// PayPal cierra el cobro aqui: no manda webhook en el flujo de captura.
+router.post('/:id/pago/capturar', isAuth, capturarPago);
 
 router.get('/',            isAuth,          getOrders);
 router.post('/',           isAuth,          createOrder);
