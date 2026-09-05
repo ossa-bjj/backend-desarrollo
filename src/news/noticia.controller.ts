@@ -116,6 +116,38 @@ export const getNoticias = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+// --- GET /api/noticias/:id (publico: solo si esta publicada) ---
+/**
+ * Una noticia suelta, para que su direccion se pueda compartir y abrir directa
+ * sin arrastrar el listado entero detras.
+ *
+ * Un borrador responde 404 y no 403: decir "existe pero no puedes verla"
+ * convierte la ruta en un detector de noticias sin publicar, y desde fuera no
+ * hay diferencia entre lo que no existe y lo que todavia no se ensena.
+ */
+export const getNoticia = async (req: Request, res: Response): Promise<void> => {
+  const id = parseId(req.params['id'] ?? '');
+  if (!id) {
+    idInvalido(res);
+    return;
+  }
+
+  try {
+    const noticia = await NoticiaModelo.findOne({ _id: id, publicada: true }).populate(
+      RUTAS_AUTOR.slice(),
+    );
+
+    if (!noticia) {
+      noEncontrada(res);
+      return;
+    }
+
+    res.status(200).json({ success: true, data: noticia });
+  } catch (error) {
+    sendServerError(res, 'Error obteniendo la noticia', error);
+  }
+};
+
 // --- GET /api/noticias/admin/all (admin: incluye borradores) ---
 export const getNoticiasAdmin = async (_req: Request, res: Response): Promise<void> => {
   try {

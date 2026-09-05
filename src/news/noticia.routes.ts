@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getNoticias,
+  getNoticia,
   getNoticiasAdmin,
   crearNoticia,
   actualizarNoticia,
@@ -15,6 +16,7 @@ const router = Router();
 // Las rutas literales van antes que /:id para que no las capture.
 router.get('/',              getNoticias);
 router.get('/admin/all',     isAuth, isAdmin, getNoticiasAdmin);
+router.get('/:id',           getNoticia);
 
 // --- RUTAS PROTEGIDAS ---
 router.post('/',                  isAuth, isAdmin, crearNoticia);
