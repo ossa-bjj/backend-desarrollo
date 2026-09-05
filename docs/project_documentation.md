@@ -28,7 +28,7 @@
 | | |
 | --- | --- |
 | **Rama** | `feat/pasarela-pago` |
-| **Commit** | `e83f11e` |
+| **Commit** | `d1f104b` |
 | **Fecha** | 2026-09-05 |
 
 Esta documentación describe el backend tal y como está en ese commit. Todo lo que
@@ -103,7 +103,6 @@ payments       → availability, orders, products, shared
 backend/
 ├── api/index.ts              Entrada serverless de Vercel (reexporta index.ts)
 ├── index.ts                  App Express: middlewares, CORS, rutas, arranque local
-├── seed.ts                   Datos de ejemplo: 5 usuarios, 25 productos, 5 servicios
 ├── src/
 │   ├── availability/         Huecos reservables y retención de horarios
 │   ├── news/                 Noticias con historial de cambios
@@ -357,9 +356,10 @@ cuando la fecha queda atrás. No hay tarea de mantenimiento que escribir.
 
 ### Semilla
 
-`seed.ts` limpia las colecciones de usuarios, productos y servicios e inserta 5
-usuarios, 25 productos y 5 servicios de ejemplo. **Borra lo que haya**: no ejecutarlo
-sobre datos que importen.
+**No hay semilla en el repositorio.** La base se puebla a mano o con un script propio
+que no viaja con el código. Quien monte el proyecto de cero se encuentra las
+colecciones vacías, y el primer usuario administrador hay que crearlo directamente en
+Mongo o por `POST /api/users/register` seguido de un cambio de rol.
 
 ---
 
@@ -443,11 +443,7 @@ cp .env.example .env
 # rellenar .env con los valores reales
 ```
 
-Para poblar la base con datos de ejemplo:
-
-```bash
-pnpm seed
-```
+La base arranca vacía: no hay semilla en el repositorio.
 
 ---
 
@@ -458,7 +454,6 @@ pnpm seed
 ```bash
 pnpm dev          # ts-node-dev con recarga, en http://localhost:3000
 pnpm verificar    # tsc --noEmit, sin generar nada
-pnpm humo         # prueba de humo contra el servidor local (ver sección 11)
 ```
 
 ### Producción
@@ -485,32 +480,23 @@ Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
 pnpm verificar    # tsc --noEmit
 ```
 
-### Prueba de humo
+### Comprobación funcional
 
-`scripts/humo.ts` recorre la API entera por HTTP, como lo haría un cliente. Son 54
-comprobaciones y cada una espera un código de estado concreto:
+Se hace a mano, llamando a la API con el servidor levantado. La forma más corta de
+ejercitar un endpoint protegido es sacar un token del login y usarlo:
 
 ```bash
-pnpm dev          # en una terminal
-pnpm humo         # en otra
+TOKEN=$(curl -s -X POST http://localhost:3000/api/users/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<password>"}' | jq -r .data.token)
+
+curl -s http://localhost:3000/api/pedidos -H "Authorization: Bearer $TOKEN"
 ```
 
-Cubre la autenticación, el CRUD de productos, servicios, disponibilidad y noticias, el
-ciclo de un pedido con los tres métodos de pago, los dos webhooks sin firma y la
-recuperación de contraseña. Termina con código de salida distinto de cero si algo
-falla.
-
-Dos cosas que conviene saber antes de ejecutarla:
-
-- **Escribe en la base de datos a la que apunte `MONGODB_URI`.** Crea sus propios
-  registros, los prefija con `HUMO` y los borra al terminar, pero no está pensada para
-  correr contra producción.
-- **No cobra nada.** Los pagos se ejercitan hasta donde se puede sin claves: comprueba
-  que un método inventado se rechaza, que PayPal exige la URL de vuelta, y que los dos
-  webhooks rechazan una firma que no es válida.
-
-Lo que no cubre: la subida de archivos a R2, el envío real de correo y el cobro
-completo con las pasarelas, porque las tres cosas necesitan credenciales.
+Los tres métodos de pago, la subida a R2 y el envío de correo **no se pueden ejercitar
+sin credenciales**: hasta que estén, lo único comprobable de la pasarela es que rechaza
+lo que debe rechazar (un método inventado, PayPal sin URL de vuelta, un webhook con
+firma que no vale).
 
 ---
 
@@ -742,10 +728,9 @@ quemado tras usarse— se probó de punta a punta contra MongoDB. Sin `RESEND_AP
 apellidos dentro. Sin él responde `400 Datos no validos: profile`, y queda anotado en
 la referencia de endpoints.
 
-**La verificación es una prueba de humo, no una suite de tests.** `pnpm humo` recorre
-la API entera por HTTP y hoy pasa sus 54 comprobaciones, pero no hay tests unitarios ni
-framework declarado: lo que no se puede ejercitar sin credenciales —el cobro real, la
-subida a R2 y el envío de correo— se queda fuera.
+**La única verificación automática es la de tipos.** No hay tests en el repositorio ni
+framework declarado: es una decisión del proyecto, no un descuido. Lo funcional se
+comprueba a mano contra el servidor levantado.
 
 Lo que falta por hacer está recogido en el
 [Checklist de pendientes](#17-checklist-de-pendientes).
@@ -768,9 +753,6 @@ sin saber por qué se hicieron así.
 - **`users/` está partido en cuatro controladores** (autenticación, identidad, perfil
   y direcciones, membresía y pagos). Cada uno cambia por motivos distintos; juntarlos
   crearía un fichero de mil líneas con cuatro razones para cambiar.
-- **`seed.ts` es el fichero más largo del repositorio y no es un problema.** De sus
-  770 líneas, unas 700 son datos literales y unas 45 lógica. Es una tabla de datos, y
-  las tablas de datos son largas. No hace falta trocearlo.
 - **Los códigos de artículo son un espacio compartido entre productos y servicios.**
   Podría parecer que cada uno debería tener su propia numeración, pero un pedido
   mezcla ambos y el código es lo que permite distinguirlos en la misma línea.
@@ -782,7 +764,7 @@ sin saber por qué se hicieron así.
 Esta documentación representa el commit indicado en
 [Estado documentado](#1-estado-documentado). Para actualizarla:
 
-1. Usa `git log e83f11e..HEAD --oneline` solo para **localizar qué ha cambiado**.
+1. Usa `git log d1f104b..HEAD --oneline` solo para **localizar qué ha cambiado**.
 2. Identifica qué secciones quedan afectadas.
 3. **Lee el código actual** de esos módulos y documenta lo que hay ahora.
 4. Actualiza solo esas secciones.
@@ -826,10 +808,10 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       darlo de alta en el panel apuntando a `/api/pedidos/webhook/paypal`, suscrito a
       `CHECKOUT.ORDER.APPROVED`, y copiar su id en `PAYPAL_WEBHOOK_ID`. Sin él, un cliente
       que apruebe y no vuelva al sitio deja el pedido a medias. — panel de PayPal, `.env`
-- [ ] **Sin tests unitarios.** `pnpm humo` recorre la API por HTTP, pero no hay framework
-      declarado en `package.json` ni ficheros `*.test.ts` o `*.spec.ts`. Lo que la prueba
-      de humo no puede tocar sin credenciales —cobro real, subida a R2, envío de
-      correo— sigue sin cubrir. — `package.json`, `scripts/humo.ts`
+- [ ] **Sin tests automatizados.** No hay framework declarado en `package.json` ni
+      ficheros de prueba en el repositorio. Con tres métodos de pago y dos caminos de
+      confirmación, la verificación funcional depende de ejercitar la API a mano.
+      — `package.json`
 
 ### Cerrados
 
@@ -837,9 +819,6 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       de endpoints, con los campos que lleva dentro. Además ya no falla con un `500`
       confuso: responde `400 Datos no validos: profile`. — `docs/api-endpoints.md`,
       `src/shared/controller.utils.ts`
-- [x] **Sin ninguna verificación automatizada.** Cerrado con `pnpm humo`: 54
-      comprobaciones sobre la API en marcha, que limpian detrás de sí. Queda abierto lo
-      que necesita credenciales y los tests unitarios. — `scripts/humo.ts`
 
 - [x] **`api/index.ts` frente a declarar la función en `vercel.json`.** Decisión tomada:
       **se queda**. La propiedad `functions` de `vercel.json` solo admite globs que apunten

@@ -111,38 +111,17 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 
 ## 🧰 Comandos
 
-| Comando          | Qué hace                                     |
-| ---------------- | -------------------------------------------- |
-| `pnpm dev`       | Arranca en local y se reinicia al guardar    |
-| `pnpm verificar` | Comprueba los tipos sin generar nada         |
-| `pnpm humo`      | Prueba de humo de la API (con `dev` en marcha) |
-| `pnpm build`     | Compila a `dist/`                            |
-| `pnpm start`     | Ejecuta lo compilado                         |
-| `pnpm seed`      | Rellena la base con datos de prueba          |
-
-### 🔥 Prueba de humo
-
-`pnpm humo` lanza 54 comprobaciones contra el servidor local: autenticación, los CRUD,
-el ciclo de un pedido con los tres métodos de pago y la recuperación de contraseña.
-Necesita `pnpm dev` en otra terminal.
-
-> [!WARNING]
-> Escribe en la base a la que apunte tu `.env`. Crea sus propios registros y los borra
-> al terminar, pero no la lances contra producción.
+| Comando          | Qué hace                                  |
+| ---------------- | ----------------------------------------- |
+| `pnpm dev`       | Arranca en local y se reinicia al guardar |
+| `pnpm verificar` | Comprueba los tipos sin generar nada      |
+| `pnpm build`     | Compila a `dist/`                         |
+| `pnpm start`     | Ejecuta lo compilado                      |
 
 ### 🌱 Datos de prueba
 
-`pnpm seed` mete 5 usuarios, 25 productos y 5 servicios para poder trastear.
-
-| Usuario           | Contraseña     | Rol           |
-| ----------------- | -------------- | ------------- |
-| `admin`           | `Admin1234!`   | administrador |
-| `cliente_regular` | `Cliente1234!` | usuario       |
-
-> [!CAUTION]
-> **Antes de meter nada, vacía usuarios, productos y servicios.** No lo ejecutes sobre
-> datos que te importen. Y esas contraseñas son solo para tu ordenador: nunca en
-> producción.
+No hay semilla en el repositorio: la base arranca vacía. El primer administrador se
+crea con `POST /api/users/register` y luego se le cambia el rol en Mongo.
 
 ---
 

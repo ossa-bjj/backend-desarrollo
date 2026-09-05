@@ -34,7 +34,11 @@ const TIPOS_ADMITIDOS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', '
 const esDestinoPermitido = (url: URL): boolean => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
 
-  const host = url.hostname.toLowerCase();
+  // `hostname` devuelve las direcciones IPv6 entre corchetes —`[fd00::1]`—, asi
+  // que hay que quitarlos antes de comparar. Sin esto, las comprobaciones de
+  // IPv6 de abajo miraban una cadena que empieza por `[` y no casaban nunca:
+  // las direcciones locales `fd00::/8` y `fe80::/10` pasaban el filtro.
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return false;
 
   // IPv4 privada, bucle local y enlace local (la metadata de los proveedores
@@ -43,10 +47,12 @@ const esDestinoPermitido = (url: URL): boolean => {
   if (/^192\.168\./.test(host)) return false;
   if (/^169\.254\./.test(host)) return false;
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
-  // IPv6 local.
-  if (host === '::1' || host.startsWith('[::1]') || host.startsWith('fd') || host.startsWith('fe80')) {
-    return false;
-  }
+
+  // IPv6: bucle local, direccion sin especificar, unicas locales (fc00::/7) y
+  // enlace local (fe80::/10).
+  if (host === '::1' || host === '::') return false;
+  if (/^f[cd][0-9a-f]{0,2}:/.test(host)) return false;
+  if (/^fe[89ab][0-9a-f]?:/.test(host)) return false;
 
   return true;
 };
