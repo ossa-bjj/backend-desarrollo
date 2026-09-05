@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { NoticiaModelo, CategoriaNoticia, AccionHistorial, INoticia } from './noticia.model';
 import { sendServerError } from '../shared/controller.utils';
+import { resolverPortada } from '../shared/imagenRemota';
+import { deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 // Carga la declaracion global de Express.Request.user (definida en token.utils).
 import '../shared/token.utils';
 
@@ -109,11 +111,24 @@ export const crearNoticia = async (req: Request, res: Response): Promise<void> =
 
     const autorId = req.user?.id;
 
+    // La portada se copia al bucket al guardar. Si el enlace no lleva a una
+    // imagen, se corta aqui con el motivo: guardar la noticia igualmente
+    // dejaria una portada que no se ve y nadie se enteraria hasta publicarla.
+    let portada = '';
+    if (imagenPortada) {
+      try {
+        portada = await resolverPortada(String(imagenPortada), String(titulo ?? 'portada'));
+      } catch (error) {
+        res.status(400).json({ error: (error as Error).message });
+        return;
+      }
+    }
+
     const noticia = new NoticiaModelo({
       titulo,
       extracto,
       contenido,
-      imagenPortada,
+      imagenPortada: portada,
       categoria: categoria ?? CategoriaNoticia.GENERAL,
       fechaEvento,
       horaInicio,
@@ -162,7 +177,15 @@ export const actualizarNoticia = async (req: Request, res: Response): Promise<vo
     if (titulo !== undefined) noticia.titulo = titulo;
     if (extracto !== undefined) noticia.extracto = extracto;
     if (contenido !== undefined) noticia.contenido = contenido;
-    if (imagenPortada !== undefined) noticia.imagenPortada = imagenPortada;
+
+    if (imagenPortada !== undefined) {
+      try {
+        noticia.imagenPortada = await resolverPortada(String(imagenPortada), noticia.titulo);
+      } catch (error) {
+        res.status(400).json({ error: (error as Error).message });
+        return;
+      }
+    }
     if (fechaEvento !== undefined) noticia.fechaEvento = fechaEvento === '' ? undefined : fechaEvento;
     if (horaInicio !== undefined) noticia.horaInicio = horaInicio;
     if (horaFin !== undefined) noticia.horaFin = horaFin;
@@ -215,6 +238,17 @@ export const eliminarNoticia = async (req: Request, res: Response): Promise<void
 
     const noticia = await NoticiaModelo.findByIdAndDelete(id);
     if (!noticia) return noEncontrada(res);
+
+    // La portada vive en el bucket desde que se copia al guardar: si no se
+    // borra aqui, cada noticia eliminada deja su imagen ocupando sitio sin que
+    // nada la referencie. Si el objeto ya no esta, se sigue adelante.
+    if (noticia.imagenPortada) {
+      try {
+        await deleteFromR2(keyFromPublicUrl(noticia.imagenPortada));
+      } catch (error) {
+        console.warn(`No se pudo borrar la portada de la noticia ${id}:`, (error as Error).message);
+      }
+    }
 
     res.status(200).json({ success: true, data: { mensaje: 'Noticia eliminada' } });
   } catch (error) {

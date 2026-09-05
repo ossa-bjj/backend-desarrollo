@@ -171,7 +171,28 @@ añade, nunca se edita.
 | POST | `/` | Admin | Crea una noticia como borrador. |
 | PUT | `/:id` | Admin | Actualiza una noticia. Solo cambia los campos enviados. |
 | PATCH | `/:id/publicar` | Admin | Alterna entre publicada y borrador. |
-| DELETE | `/:id` | Admin | Elimina la noticia y su historial. |
+| DELETE | `/:id` | Admin | Elimina la noticia, su historial y su portada del bucket. |
+
+### La portada se copia, no se enlaza
+
+`imagenPortada` admite dos cosas: el enlace directo a una imagen, o el de la **página** que la
+contiene —el post de Instagram, por ejemplo—, de la que se lee su `og:image`. En ambos casos
+la imagen **se descarga y se guarda en R2** al crear o actualizar, y en la base queda la key
+del bucket, no el enlace de origen.
+
+No es un capricho: la URL del CDN que hay detrás de un post de Instagram viene firmada y
+**caduca en unos días**, así que una portada enlazada se rompería sola. Y la URL de la página
+(`instagram.com/p/…`) no es una imagen en absoluto: era lo que dejaba la noticia sin portada
+sin avisar de nada.
+
+Si el enlace no lleva a ninguna imagen, la petición responde **`400` con el motivo** en vez de
+guardar una noticia con una portada que no se ve. Lo que ya está en el bucket no se vuelve a
+copiar, así que reeditar una noticia no duplica su imagen.
+
+**El servidor sale a la red a por esa URL**, de modo que se rechazan los destinos que no sean
+`http`/`https` y los que apunten a `localhost`, a IPs privadas o al rango de metadatos
+`169.254.x`: sin ese filtro, el campo sería una ventana a la red interna del despliegue.
+Límites: 8 MB de imagen, 4 MB de HTML y 15 s de espera.
 
 Categorías admitidas: `EVENTO`, `RESULTADO`, `CLUB`, `PROMOCION`, `GENERAL`. Cualquier
 otra devuelve `400`.

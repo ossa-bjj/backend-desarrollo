@@ -1,4 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
+import { esReferenciaDeNuestroAlmacen, normalizarUrlMedia } from '../shared/r2.utils';
 
 export enum CategoriaNoticia {
   EVENTO    = 'EVENTO',
@@ -145,7 +146,24 @@ const NoticiaSchema = new Schema<INoticia>(
       default: [],
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    // La portada se guarda como key del bucket, igual que las imagenes de
+    // productos y servicios: la URL publica depende del entorno y se resuelve
+    // aqui, al salir, en vez de congelarse dentro del dato.
+    toJSON: {
+      transform: (_doc: unknown, ret: Record<string, unknown>) => {
+        const portada = ret['imagenPortada'];
+        // Solo se reescribe lo que es nuestro. Las noticias anteriores a la
+        // copia automatica guardan un enlace externo, y normalizarlo lo
+        // convertiria en una ruta de nuestro dominio que no existe.
+        if (portada && esReferenciaDeNuestroAlmacen(String(portada))) {
+          ret['imagenPortada'] = normalizarUrlMedia(String(portada));
+        }
+        return ret;
+      },
+    },
+  },
 );
 
 // La portada publica ordena por fecha de creacion descendente y filtra por

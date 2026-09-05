@@ -112,7 +112,7 @@ backend/
 │   ├── products/             Productos y carga de imágenes
 │   ├── services/             Servicios vendibles (códigos 60XX)
 │   ├── users/                Usuarios, perfiles y membresías
-│   └── shared/               DB, JWT, R2, CORS, correo, entorno y middleware
+│   └── shared/               DB, JWT, R2, CORS, correo, imagen remota, entorno
 ├── docs/
 │   ├── api-endpoints.md      Referencia de rutas
 │   └── project_documentation.md   Este documento
