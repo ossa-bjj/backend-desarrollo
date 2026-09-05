@@ -117,21 +117,11 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 | `pnpm verificar` | Comprueba los tipos sin generar nada      |
 | `pnpm build`     | Compila a `dist/`                         |
 | `pnpm start`     | Ejecuta lo compilado                      |
-| `pnpm seed`      | Rellena la base con datos de prueba       |
 
 ### 🌱 Datos de prueba
 
-`pnpm seed` mete 5 usuarios, 25 productos y 5 servicios para poder trastear.
-
-| Usuario           | Contraseña     | Rol           |
-| ----------------- | -------------- | ------------- |
-| `admin`           | `Admin1234!`   | administrador |
-| `cliente_regular` | `Cliente1234!` | usuario       |
-
-> [!CAUTION]
-> **Antes de meter nada, vacía usuarios, productos y servicios.** No lo ejecutes sobre
-> datos que te importen. Y esas contraseñas son solo para tu ordenador: nunca en
-> producción.
+No hay semilla en el repositorio: la base arranca vacía. El primer administrador se
+crea con `POST /api/users/register` y luego se le cambia el rol en Mongo.
 
 ---
 

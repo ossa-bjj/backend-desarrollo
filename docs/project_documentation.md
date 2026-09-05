@@ -103,7 +103,6 @@ payments       → availability, orders, products, shared
 backend/
 ├── api/index.ts              Entrada serverless de Vercel (reexporta index.ts)
 ├── index.ts                  App Express: middlewares, CORS, rutas, arranque local
-├── seed.ts                   Datos de ejemplo: 5 usuarios, 25 productos, 5 servicios
 ├── src/
 │   ├── availability/         Huecos reservables y retención de horarios
 │   ├── news/                 Noticias con historial de cambios
@@ -357,9 +356,10 @@ cuando la fecha queda atrás. No hay tarea de mantenimiento que escribir.
 
 ### Semilla
 
-`seed.ts` limpia las colecciones de usuarios, productos y servicios e inserta 5
-usuarios, 25 productos y 5 servicios de ejemplo. **Borra lo que haya**: no ejecutarlo
-sobre datos que importen.
+**No hay semilla en el repositorio.** La base se puebla a mano o con un script propio
+que no viaja con el código. Quien monte el proyecto de cero se encuentra las
+colecciones vacías, y el primer usuario administrador hay que crearlo directamente en
+Mongo o por `POST /api/users/register` seguido de un cambio de rol.
 
 ---
 
@@ -443,11 +443,7 @@ cp .env.example .env
 # rellenar .env con los valores reales
 ```
 
-Para poblar la base con datos de ejemplo:
-
-```bash
-pnpm seed
-```
+La base arranca vacía: no hay semilla en el repositorio.
 
 ---
 
@@ -757,9 +753,6 @@ sin saber por qué se hicieron así.
 - **`users/` está partido en cuatro controladores** (autenticación, identidad, perfil
   y direcciones, membresía y pagos). Cada uno cambia por motivos distintos; juntarlos
   crearía un fichero de mil líneas con cuatro razones para cambiar.
-- **`seed.ts` es el fichero más largo del repositorio y no es un problema.** De sus
-  770 líneas, unas 700 son datos literales y unas 45 lógica. Es una tabla de datos, y
-  las tablas de datos son largas. No hace falta trocearlo.
 - **Los códigos de artículo son un espacio compartido entre productos y servicios.**
   Podría parecer que cada uno debería tener su propia numeración, pero un pedido
   mezcla ambos y el código es lo que permite distinguirlos en la misma línea.
