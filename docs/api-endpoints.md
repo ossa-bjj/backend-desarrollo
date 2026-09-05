@@ -6,6 +6,8 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 **Errores.** Un fallo no previsto responde `500 { error }` con un mensaje genérico. El detalle se registra en el servidor y no viaja al cliente: los mensajes de Mongoose nombran colecciones, campos e índices, y eso es un mapa gratis de la aplicación.
 
+Un cuerpo al que le falte un campo obligatorio, o que traiga un valor fuera de rango, es una petición mal formada y no un fallo del servidor: responde `400 { error: "Datos no validos: <campos>" }` nombrando qué hay que corregir. Vale para todos los controladores, porque la regla vive en `sendServerError`.
+
 Un cuerpo mal formado o demasiado grande no llega a ningún controlador: lo rechaza `express.json()` y el manejador de errores conserva **su** código (`400`, `413`) en vez de convertirlo en un `500`. Un fallo del cliente no debe mandar a buscar la avería en el servidor.
 
 **Listados paginados.** `GET /productos`, `GET /users` y `GET /pedidos` añaden `meta: { total, pagina, limite }`. `data` es la página; `total` cuenta todo lo que cumple el filtro. Ambos aceptan `?pagina=` (desde 1) y `?limite=` (100 por defecto, 500 como máximo); un valor ilegible cae al valor por defecto en lugar de dar error. **Todo el filtrado se resuelve en el servidor**: el cliente envía criterios y pinta lo que recibe, sin recortarlo.
@@ -21,7 +23,7 @@ Un cuerpo mal formado o demasiado grande no llega a ningún controlador: lo rech
 
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
-| POST | `/register` | Público | Registra un usuario. |
+| POST | `/register` | Público | Registra un usuario. Además de `username`, `email` y `password` exige **`profile`**, con el nombre y los apellidos dentro; sin él responde `400 Datos no validos: profile`. |
 | POST | `/login` | Público | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada. |
 | POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. Envía al correo un enlace a `<origen>/recuperar?token=`, válido una hora; el origen sale de la cabecera `Origin` validada contra `ALLOWED_ORIGINS`. Responde siempre lo mismo exista o no el correo, para no convertirse en un censo de usuarios. Sin `RESEND_API_KEY` el correo no sale y queda avisado en el log. |
 | POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
@@ -173,17 +175,24 @@ añade, nunca se edita.
 | PATCH | `/:id/publicar` | Admin | Alterna entre publicada y borrador. |
 | DELETE | `/:id` | Admin | Elimina la noticia, su historial y su portada del bucket. |
 
-### La portada se copia, no se enlaza
+### Cómo se ilustra una noticia
 
-`imagenPortada` admite dos cosas: el enlace directo a una imagen, o el de la **página** que la
-contiene —el post de Instagram, por ejemplo—, de la que se lee su `og:image`. En ambos casos
-la imagen **se descarga y se guarda en R2** al crear o actualizar, y en la base queda la key
-del bucket, no el enlace de origen.
+El campo del formulario es siempre `imagenPortada`, pero el servidor mira lo que llega y lo
+reparte entre dos campos **excluyentes**:
 
-No es un capricho: la URL del CDN que hay detrás de un post de Instagram viene firmada y
-**caduca en unos días**, así que una portada enlazada se rompería sola. Y la URL de la página
-(`instagram.com/p/…`) no es una imagen en absoluto: era lo que dejaba la noticia sin portada
-sin avisar de nada.
+| Lo que se envía en `imagenPortada` | Qué se guarda |
+| --- | --- |
+| El código de inserción de una publicación de Instagram, o su enlace (`/p/…` o `/reel/…`) | El permalink normalizado en `instagramPost`, y `imagenPortada` vacío |
+| Una referencia que ya está en el bucket | Su key en `imagenPortada` |
+| Cualquier otro enlace a una imagen, o a la **página** que la contiene, de la que se lee su `og:image` | La imagen **descargada y copiada a R2**, y su key en `imagenPortada` |
+
+Una noticia se ilustra con una publicación insertada o con una imagen propia, nunca con las
+dos.
+
+Instagram va por su propio camino porque su imagen no se puede guardar: la URL del CDN viene
+firmada y **caduca en unos días**, y la que se puede leer de la página llega ya recortada.
+Insertando la publicación la sirve Instagram y no se rompe sola. El resto de enlaces se copian
+por el motivo simétrico: una imagen ajena puede desaparecer.
 
 Si el enlace no lleva a ninguna imagen, la petición responde **`400` con el motivo** en vez de
 guardar una noticia con una portada que no se ve. Lo que ya está en el bucket no se vuelve a

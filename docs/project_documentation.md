@@ -27,9 +27,9 @@
 
 | | |
 | --- | --- |
-| **Rama** | `desarrollo` |
-| **Commit** | `e5557b1` |
-| **Fecha** | 2026-08-25 |
+| **Rama** | `feat/pasarela-pago` |
+| **Commit** | `e83f11e` |
+| **Fecha** | 2026-09-05 |
 
 Esta documentación describe el backend tal y como está en ese commit. Todo lo que
 afirma se ha comprobado leyendo el código, la configuración o ejercitando la API en
@@ -230,11 +230,36 @@ Cada cambio añade una entrada a `historial` con la acción (`creada`, `editada`
 `publicada`, `despublicada`), el autor y una foto del título, el contenido y el estado
 en ese momento. Es un registro de auditoría: se añade, nunca se edita.
 
+**Cómo se ilustra una noticia.** El campo `imagenPortada` admite tres cosas, y el
+servidor decide qué hacer con cada una en `resolverPortada`
+(`src/shared/imagenRemota.ts`):
+
+| Lo que llega | Qué hace el servidor | Dónde acaba |
+| --- | --- | --- |
+| El código de inserción de una publicación de Instagram, o su enlace | Extrae el permalink y lo normaliza | `instagramPost` |
+| Una referencia del propio almacén | La deja como está | `imagenPortada` |
+| Cualquier otro enlace a una imagen, o a la página que la contiene | La descarga y la copia a R2 | `imagenPortada` |
+
+**Los dos campos son excluyentes**: una noticia se ilustra con una publicación
+insertada o con una imagen propia, nunca con las dos. El que no se usa queda vacío.
+
+Que Instagram vaya por su propio camino tiene motivo: la URL de imagen que sirve su
+CDN viene firmada y **caduca a los pocos días**, y la que se puede leer de la página
+llega ya recortada. Insertar la publicación deja que sea Instagram quien la sirva, y
+así no se rompe sola.
+
+Copiar a R2 el resto de enlaces responde al mismo problema al revés: una imagen ajena
+puede desaparecer, así que se guarda una copia.
+
+Cualquier otro valor se rechaza con **400**. La descarga solo acepta `http` y `https`,
+bloquea las direcciones de la red interna, y corta a 8 MB de imagen, 4 MB de HTML y
+15 segundos.
+
 ---
 
 ## 6. Modelo de datos
 
-MongoDB con Mongoose. Seis colecciones:
+MongoDB con Mongoose. Siete colecciones:
 
 ```text
 User ──1:N──→ Order ──1:N──→ OrderItem (embebido)
@@ -246,6 +271,7 @@ User ──1:N──→ Order ──1:N──→ OrderItem (embebido)
 Producto        independiente, referenciado por codigoArticulo
 Servicio        independiente, referenciado por codigoArticulo
 Disponibilidad  ──N:1──→ Servicio
+IntentoAcceso   independiente, se borra sola
 ```
 
 ### User
@@ -301,13 +327,33 @@ Disponibilidad
 
 ```text
 Noticia
-├── titulo, extracto, contenido, imagenPortada
+├── titulo, extracto, contenido
+├── imagenPortada   referencia en R2, ya sea subida o copiada de un enlace
+├── instagramPost   permalink de la publicación, si se ilustró con una
 ├── categoria       EVENTO | RESULTADO | CLUB | PROMOCION | GENERAL
 ├── fechaEvento, horaInicio, horaFin, lugar    (solo tienen sentido en EVENTO)
 ├── publicada       nace en false
 ├── autor           referencia a User
 └── historial[]     { fecha, autor, accion, snapshot }
 ```
+
+### IntentoAcceso
+
+El contador del freno de fuerza bruta del login.
+
+```text
+IntentoAcceso
+├── clave            a quién cuenta: un usuario o una IP
+├── intentos         fallos acumulados
+├── bloqueadoHasta   hasta cuándo se rechaza
+└── expiraEn         cuándo se borra el documento
+```
+
+Vive en Mongo y no en memoria **porque el despliegue es serverless**: cada petición
+puede caer en una instancia distinta, así que un contador en memoria no cuenta nada.
+
+Se limpia sola: un índice TTL sobre `expiraEn` hace que Mongo borre el documento
+cuando la fecha queda atrás. No hay tarea de mantenimiento que escribir.
 
 ### Semilla
 
@@ -411,6 +457,8 @@ pnpm seed
 
 ```bash
 pnpm dev          # ts-node-dev con recarga, en http://localhost:3000
+pnpm verificar    # tsc --noEmit, sin generar nada
+pnpm humo         # prueba de humo contra el servidor local (ver sección 11)
 ```
 
 ### Producción
@@ -428,14 +476,41 @@ serverless.
 
 ## 11. Tests
 
-**En el estado revisado no existen tests automatizados en este repositorio.** No hay
-framework de pruebas declarado en `package.json` ni ficheros `*.test.ts` o `*.spec.ts`.
+Hay dos verificaciones, y ninguna necesita framework de pruebas: **no hay Jest ni
+Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
 
-La verificación disponible hoy es la comprobación de tipos:
+### Comprobación de tipos
 
 ```bash
-npx tsc --noEmit
+pnpm verificar    # tsc --noEmit
 ```
+
+### Prueba de humo
+
+`scripts/humo.ts` recorre la API entera por HTTP, como lo haría un cliente. Son 54
+comprobaciones y cada una espera un código de estado concreto:
+
+```bash
+pnpm dev          # en una terminal
+pnpm humo         # en otra
+```
+
+Cubre la autenticación, el CRUD de productos, servicios, disponibilidad y noticias, el
+ciclo de un pedido con los tres métodos de pago, los dos webhooks sin firma y la
+recuperación de contraseña. Termina con código de salida distinto de cero si algo
+falla.
+
+Dos cosas que conviene saber antes de ejecutarla:
+
+- **Escribe en la base de datos a la que apunte `MONGODB_URI`.** Crea sus propios
+  registros, los prefija con `HUMO` y los borra al terminar, pero no está pensada para
+  correr contra producción.
+- **No cobra nada.** Los pagos se ejercitan hasta donde se puede sin claves: comprueba
+  que un método inventado se rechaza, que PayPal exige la URL de vuelta, y que los dos
+  webhooks rechazan una firma que no es válida.
+
+Lo que no cubre: la subida de archivos a R2, el envío real de correo y el cobro
+completo con las pasarelas, porque las tres cosas necesitan credenciales.
 
 ---
 
@@ -461,6 +536,13 @@ Error:
 
 Códigos usados: `400` datos inválidos, `401` sin token, `403` sin permiso, `404` no
 encontrado, `409` conflicto de estado, `500` error interno.
+
+Un cuerpo al que le falte un campo obligatorio, o que traiga un valor fuera de rango,
+responde **400 nombrando los campos** (`Datos no validos: subcategoria`). El resto del
+mensaje de Mongoose se queda en el registro del servidor: nombra colecciones, índices y
+rutas internas, y eso es un mapa gratis de la aplicación para quien la esté sondeando.
+La regla vive en `sendServerError` (`src/shared/controller.utils.ts`) y por tanto vale
+para todos los controladores a la vez.
 
 ### Grupos
 
@@ -656,10 +738,14 @@ se puede probar sin rellenarlas. Bizum además hay que activarlo en el panel de 
 quemado tras usarse— se probó de punta a punta contra MongoDB. Sin `RESEND_API_KEY` lo
 único que no ocurre es el envío: el flujo responde igual y lo avisa en el log.
 
-**El registro exige `profile` en el cuerpo de la petición.** Sin él Mongoose rechaza
-con `Path 'profile' is required`, y el `.env.example` no lo menciona.
+**El registro exige `profile` en el cuerpo de la petición**, con el nombre y los
+apellidos dentro. Sin él responde `400 Datos no validos: profile`, y queda anotado en
+la referencia de endpoints.
 
-No hay tests automatizados en el repositorio.
+**La verificación es una prueba de humo, no una suite de tests.** `pnpm humo` recorre
+la API entera por HTTP y hoy pasa sus 54 comprobaciones, pero no hay tests unitarios ni
+framework declarado: lo que no se puede ejercitar sin credenciales —el cobro real, la
+subida a R2 y el envío de correo— se queda fuera.
 
 Lo que falta por hacer está recogido en el
 [Checklist de pendientes](#17-checklist-de-pendientes).
@@ -696,7 +782,7 @@ sin saber por qué se hicieron así.
 Esta documentación representa el commit indicado en
 [Estado documentado](#1-estado-documentado). Para actualizarla:
 
-1. Usa `git log e5557b1..HEAD --oneline` solo para **localizar qué ha cambiado**.
+1. Usa `git log e83f11e..HEAD --oneline` solo para **localizar qué ha cambiado**.
 2. Identifica qué secciones quedan afectadas.
 3. **Lee el código actual** de esos módulos y documenta lo que hay ahora.
 4. Actualiza solo esas secciones.
@@ -740,14 +826,20 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       darlo de alta en el panel apuntando a `/api/pedidos/webhook/paypal`, suscrito a
       `CHECKOUT.ORDER.APPROVED`, y copiar su id en `PAYPAL_WEBHOOK_ID`. Sin él, un cliente
       que apruebe y no vuelva al sitio deja el pedido a medias. — panel de PayPal, `.env`
-- [ ] **El registro exige `profile` y no está documentado.** Una petición sin ese campo
-      falla con `Path 'profile' is required`. — `src/users/auth.controller.ts`,
-      `.env.example`
-- [ ] **Sin tests automatizados.** No hay framework declarado en `package.json` ni
-      ficheros `*.test.ts` o `*.spec.ts` en el repositorio. Con tres métodos de pago y dos
-      caminos de confirmación, es la deuda más cara que queda.
+- [ ] **Sin tests unitarios.** `pnpm humo` recorre la API por HTTP, pero no hay framework
+      declarado en `package.json` ni ficheros `*.test.ts` o `*.spec.ts`. Lo que la prueba
+      de humo no puede tocar sin credenciales —cobro real, subida a R2, envío de
+      correo— sigue sin cubrir. — `package.json`, `scripts/humo.ts`
 
 ### Cerrados
+
+- [x] **El registro exige `profile` y no está documentado.** Documentado en la referencia
+      de endpoints, con los campos que lleva dentro. Además ya no falla con un `500`
+      confuso: responde `400 Datos no validos: profile`. — `docs/api-endpoints.md`,
+      `src/shared/controller.utils.ts`
+- [x] **Sin ninguna verificación automatizada.** Cerrado con `pnpm humo`: 54
+      comprobaciones sobre la API en marcha, que limpian detrás de sí. Queda abierto lo
+      que necesita credenciales y los tests unitarios. — `scripts/humo.ts`
 
 - [x] **`api/index.ts` frente a declarar la función en `vercel.json`.** Decisión tomada:
       **se queda**. La propiedad `functions` de `vercel.json` solo admite globs que apunten
