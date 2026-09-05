@@ -111,24 +111,13 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 
 ## 🧰 Comandos
 
-| Comando          | Qué hace                                     |
-| ---------------- | -------------------------------------------- |
-| `pnpm dev`       | Arranca en local y se reinicia al guardar    |
-| `pnpm verificar` | Comprueba los tipos sin generar nada         |
-| `pnpm humo`      | Prueba de humo de la API (con `dev` en marcha) |
-| `pnpm build`     | Compila a `dist/`                            |
-| `pnpm start`     | Ejecuta lo compilado                         |
-| `pnpm seed`      | Rellena la base con datos de prueba          |
-
-### 🔥 Prueba de humo
-
-`pnpm humo` lanza 54 comprobaciones contra el servidor local: autenticación, los CRUD,
-el ciclo de un pedido con los tres métodos de pago y la recuperación de contraseña.
-Necesita `pnpm dev` en otra terminal.
-
-> [!WARNING]
-> Escribe en la base a la que apunte tu `.env`. Crea sus propios registros y los borra
-> al terminar, pero no la lances contra producción.
+| Comando          | Qué hace                                  |
+| ---------------- | ----------------------------------------- |
+| `pnpm dev`       | Arranca en local y se reinicia al guardar |
+| `pnpm verificar` | Comprueba los tipos sin generar nada      |
+| `pnpm build`     | Compila a `dist/`                         |
+| `pnpm start`     | Ejecuta lo compilado                      |
+| `pnpm seed`      | Rellena la base con datos de prueba       |
 
 ### 🌱 Datos de prueba
 
