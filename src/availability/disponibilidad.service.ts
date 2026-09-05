@@ -83,6 +83,29 @@ export const liberarSlotsDePedido = async (pedidoId: Types.ObjectId | string): P
 };
 
 /**
+ * Devuelve al catalogo un unico hueco de un pedido.
+ *
+ * Existe para poder deshacer una reasignacion a medias: si al confirmar un
+ * presupuesto se mueven varios horarios y uno falla, los ya movidos hay que
+ * devolverlos donde estaban, y los que no tenian horario previo, soltarlos.
+ * Filtra por `pedidoId` ademas de por `_id` para no liberar la reserva de otro.
+ */
+export const liberarSlot = async (
+  pedidoId: Types.ObjectId | string,
+  slotId: string,
+): Promise<void> => {
+  if (!Types.ObjectId.isValid(slotId)) return;
+
+  await DisponibilidadModelo.updateOne(
+    { _id: slotId, pedidoId },
+    {
+      $set:   { estado: EstadoSlot.DISPONIBLE },
+      $unset: { pedidoId: '', retenidoHasta: '' },
+    },
+  );
+};
+
+/**
  * Convierte las retenciones de un pedido en ocupacion firme quitando la
  * caducidad. A partir de aqui el horario solo se libera cancelando el pedido.
  */

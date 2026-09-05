@@ -6,14 +6,40 @@ import { UserRole } from '../users/user.model';
 import './token.utils';
 
 /**
+ * Nombres de los campos que Mongoose rechazo, sin el resto del mensaje.
+ *
+ * El texto crudo de Mongoose nombra la coleccion y la ruta interna del modelo;
+ * la lista de campos, en cambio, es justo lo que necesita saber quien llama
+ * para corregir la peticion, y no cuenta nada del interior.
+ */
+const camposInvalidos = (error: unknown): string[] => {
+  const errores = (error as { errors?: Record<string, unknown> }).errors;
+  return errores ? Object.keys(errores) : [];
+};
+
+/**
  * Respuesta unica para un fallo no previsto.
  *
  * El detalle se registra en el servidor y no viaja al cliente: los mensajes de
  * Mongoose y de los drivers nombran colecciones, campos, indices y rutas de
  * fichero, y eso es un mapa gratis de la aplicacion para quien la esta
  * sondeando. Quien llama recibe que fallo, no por que.
+ *
+ * Con una excepcion: que falte un campo obligatorio o venga con un valor fuera
+ * de rango **no es un fallo del servidor**, es una peticion mal formada. Antes
+ * salia como 500 y mandaba a buscar la averia donde no estaba; ahora responde
+ * 400 diciendo que campos hay que corregir.
  */
 export const sendServerError = (res: Response, message: string, error: unknown): void => {
+  if ((error as Error)?.name === 'ValidationError') {
+    const campos = camposInvalidos(error);
+    console.warn(`${message} — datos no validos: ${campos.join(', ') || 'sin detalle'}`);
+    res.status(400).json({
+      error: campos.length > 0 ? `Datos no validos: ${campos.join(', ')}` : 'Datos no validos',
+    });
+    return;
+  }
+
   console.error(`${message}:`, error);
   res.status(500).json({ error: message });
 };

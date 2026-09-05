@@ -51,6 +51,32 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
   return pathname.replace(/^\/api\/media\//, "/").replace(/^\/+/, "");
 };
 
+/**
+ * Distingue lo que vive en nuestro bucket de lo que apunta a un sitio ajeno.
+ *
+ * Hace falta porque en el mismo campo pueden convivir las dos cosas: la portada
+ * de una noticia guardada hoy es una key nuestra, pero las de antes son enlaces
+ * externos que alguien pego. Normalizar un enlace externo lo destroza
+ * —`keyFromPublicUrl` le quita el dominio y deja una ruta que no existe—, asi
+ * que hay que preguntar antes de tocarlo.
+ */
+export const esReferenciaDeNuestroAlmacen = (valor: string): boolean => {
+  if (!valor) return false;
+
+  // Sin protocolo solo puede ser una key del bucket.
+  if (!/^https?:\/\//i.test(valor)) return true;
+
+  const dominioPublico = (process.env.R2_PUBLIC_DOMAIN ?? "").replace(/\/+$/, "").toLowerCase();
+
+  return (
+    (dominioPublico !== "" && valor.toLowerCase().startsWith(dominioPublico)) ||
+    // Formas heredadas de otros entornos: el proxy de medios y el dominio
+    // directo del bucket.
+    /\/api\/media\//i.test(valor) ||
+    /\.r2\.dev\//i.test(valor)
+  );
+};
+
 /** Construye la URL publica del entorno actual para una key del bucket. */
 export const publicUrlFromKey = (key: string): string => {
   if (!key) return "";

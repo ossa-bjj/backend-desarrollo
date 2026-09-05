@@ -7,7 +7,9 @@
     "dev": "ts-node-dev --respawn index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed": "ts-node seed.ts"
+    "seed": "ts-node seed.ts",
+    "humo": "ts-node --transpile-only scripts/humo.ts",
+    "verificar": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

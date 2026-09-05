@@ -24,10 +24,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 // --- MIDDLEWARES ---
-// Stripe firma el cuerpo tal cual lo envia, asi que el webhook necesita el
+// Stripe firma el cuerpo tal cual lo envia, asi que su webhook necesita el
 // Buffer sin parsear. express.json() detecta que el cuerpo ya se leyo y lo
 // respeta, por eso este orden importa.
-app.use('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
+//
+// Se monta con `post` y no con `use` a proposito: `use` casa por prefijo, y
+// entonces el webhook de PayPal —que cuelga de /webhook/paypal y si quiere el
+// cuerpo parseado— recibiria tambien un Buffer.
+app.post('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // --- CORS ---
@@ -104,6 +108,18 @@ app.use((_req, res) => {
 });
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // express.json() rechaza los cuerpos mal formados o demasiado grandes con un
+  // error que ya trae su propio codigo 4xx. Devolver 500 en esos casos culpa al
+  // servidor de un fallo del cliente, y manda a buscar la averia donde no esta.
+  const { status, statusCode } = err as Error & { status?: number; statusCode?: number };
+  const codigoDelCliente = status ?? statusCode;
+
+  if (codigoDelCliente && codigoDelCliente >= 400 && codigoDelCliente < 500) {
+    console.warn(`Peticion rechazada (${codigoDelCliente}): ${err.message}`);
+    res.status(codigoDelCliente).json({ error: 'Peticion mal formada' });
+    return;
+  }
+
   console.error(err.message);
   res.status(500).json({ error: 'Error interno del servidor' });
 });

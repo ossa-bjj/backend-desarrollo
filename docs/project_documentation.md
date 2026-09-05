@@ -27,9 +27,9 @@
 
 | | |
 | --- | --- |
-| **Rama** | `desarrollo` |
-| **Commit** | `e5557b1` |
-| **Fecha** | 2026-08-25 |
+| **Rama** | `feat/pasarela-pago` |
+| **Commit** | `e83f11e` |
+| **Fecha** | 2026-09-05 |
 
 Esta documentación describe el backend tal y como está en ese commit. Todo lo que
 afirma se ha comprobado leyendo el código, la configuración o ejercitando la API en
@@ -45,7 +45,7 @@ API HTTP de la academia de BJJ y Grappling de Arturo Salas. Cubre cuatro cosas:
   imágenes.
 - **Servicios** — sesiones de coaching, mentorías y seminarios, con reserva de horario.
 - **Pedidos y cobro** — carrito mixto de productos y servicios, con confirmación
-  administrativa cuando hace falta tarificar, y cobro con Stripe.
+  administrativa cuando hace falta tarificar, y cobro con tarjeta, Bizum o PayPal.
 - **Contenido** — noticias del club con historial de cambios.
 
 Sirve a un frontend React que vive en un repositorio separado (`ossa-bjj/frontend`).
@@ -73,8 +73,10 @@ modelo Mongoose
 MongoDB Atlas
 ```
 
-Dos integraciones externas: **Cloudflare R2** para archivos e imágenes (a través de un
-proxy propio, ver [Visita guiada](#14-visita-guiada)) y **Stripe** para el cobro.
+Cuatro integraciones externas: **Cloudflare R2** para archivos e imágenes (a través de un
+proxy propio, ver [Visita guiada](#14-visita-guiada)), **Stripe** para el cobro con
+tarjeta y con Bizum, **PayPal** para el suyo, y **Resend** para el correo de recuperación
+de contraseña. Las tres últimas se hablan por REST; solo Stripe usa SDK.
 
 ### Dependencias entre dominios
 
@@ -106,11 +108,11 @@ backend/
 │   ├── availability/         Huecos reservables y retención de horarios
 │   ├── news/                 Noticias con historial de cambios
 │   ├── orders/               Pedidos y confirmación de presupuestos
-│   ├── payments/             Stripe: PaymentIntent y webhook
+│   ├── payments/             Cobro: Stripe (tarjeta y Bizum) y PayPal
 │   ├── products/             Productos y carga de imágenes
 │   ├── services/             Servicios vendibles (códigos 60XX)
 │   ├── users/                Usuarios, perfiles y membresías
-│   └── shared/               DB, JWT, R2, entorno y middleware compartido
+│   └── shared/               DB, JWT, R2, CORS, correo, imagen remota, entorno
 ├── docs/
 │   ├── api-endpoints.md      Referencia de rutas
 │   └── project_documentation.md   Este documento
@@ -158,7 +160,7 @@ Ocho estados, definidos en `src/orders/order.model.ts`:
 crear pedido ───────┤                          ├──→ rechazado (libera horarios)
                     │                          │
                     └─ pendiente ──────────────┘   confirmado y pagable
-                            ↓ Stripe + webhook
+                            ↓ webhook de Stripe, o captura de PayPal
                          pagado → preparando → enviado → entregado
                             ↓
                         cancelado
@@ -172,8 +174,8 @@ crear pedido ───────┤                          ├──→ rech
   admin lo revisa, ajusta precios línea a línea y lo confirma o lo rechaza.
 
 `ESTADOS_NO_PAGABLES` (`pendiente_confirmacion`, `cancelado`, `rechazado`) es la lista
-que consulta `pago.controller.ts` antes de crear un PaymentIntent: un intento de pagar
-en esos estados devuelve `409`.
+que consulta `pago.controller.ts` antes de arrancar cualquier cobro: un intento de pagar
+en esos estados devuelve `409`, sea cual sea el método.
 
 **El total lo calcula siempre el servidor** con los precios vigentes en el momento de
 crear el pedido. Lo que envíe el cliente no se usa.
@@ -185,8 +187,8 @@ mecanismo tiene tres fases y está en `src/availability/disponibilidad.service.t
 
 1. **Retener** (`retenerSlots`) — al crear el pedido, los huecos pasan a `ocupado` con
    un `retenidoHasta` y el `pedidoId`. Es una retención con caducidad.
-2. **Consolidar** (`consolidarSlotsDePedido`) — cuando el webhook confirma el pago, se
-   quita la caducidad. A partir de ahí el horario solo se libera cancelando.
+2. **Consolidar** (`consolidarSlotsDePedido`) — cuando se confirma el cobro, se quita la
+   caducidad. A partir de ahí el horario solo se libera cancelando.
 3. **Liberar** (`liberarSlotsDePedido`) — al cancelar o rechazar, los huecos vuelven a
    `disponible`.
 
@@ -228,11 +230,36 @@ Cada cambio añade una entrada a `historial` con la acción (`creada`, `editada`
 `publicada`, `despublicada`), el autor y una foto del título, el contenido y el estado
 en ese momento. Es un registro de auditoría: se añade, nunca se edita.
 
+**Cómo se ilustra una noticia.** El campo `imagenPortada` admite tres cosas, y el
+servidor decide qué hacer con cada una en `resolverPortada`
+(`src/shared/imagenRemota.ts`):
+
+| Lo que llega | Qué hace el servidor | Dónde acaba |
+| --- | --- | --- |
+| El código de inserción de una publicación de Instagram, o su enlace | Extrae el permalink y lo normaliza | `instagramPost` |
+| Una referencia del propio almacén | La deja como está | `imagenPortada` |
+| Cualquier otro enlace a una imagen, o a la página que la contiene | La descarga y la copia a R2 | `imagenPortada` |
+
+**Los dos campos son excluyentes**: una noticia se ilustra con una publicación
+insertada o con una imagen propia, nunca con las dos. El que no se usa queda vacío.
+
+Que Instagram vaya por su propio camino tiene motivo: la URL de imagen que sirve su
+CDN viene firmada y **caduca a los pocos días**, y la que se puede leer de la página
+llega ya recortada. Insertar la publicación deja que sea Instagram quien la sirva, y
+así no se rompe sola.
+
+Copiar a R2 el resto de enlaces responde al mismo problema al revés: una imagen ajena
+puede desaparecer, así que se guarda una copia.
+
+Cualquier otro valor se rechaza con **400**. La descarga solo acepta `http` y `https`,
+bloquea las direcciones de la red interna, y corta a 8 MB de imagen, 4 MB de HTML y
+15 segundos.
+
 ---
 
 ## 6. Modelo de datos
 
-MongoDB con Mongoose. Seis colecciones:
+MongoDB con Mongoose. Siete colecciones:
 
 ```text
 User ──1:N──→ Order ──1:N──→ OrderItem (embebido)
@@ -244,6 +271,7 @@ User ──1:N──→ Order ──1:N──→ OrderItem (embebido)
 Producto        independiente, referenciado por codigoArticulo
 Servicio        independiente, referenciado por codigoArticulo
 Disponibilidad  ──N:1──→ Servicio
+IntentoAcceso   independiente, se borra sola
 ```
 
 ### User
@@ -269,7 +297,11 @@ Order
 ├── items[]         { tipo, codigoArticulo, nombre, precio, cantidad, slotId }
 ├── total           calculado por el servidor
 ├── status          uno de los ocho estados
-├── pago            { proveedor, estado, referencia }
+├── pago            { proveedor, paymentIntentId, estado, pagadoEn }
+│                   `proveedor` guarda el método que eligió el cliente
+│                   (`stripe` · `bizum` · `paypal`), y `paymentIntentId`, la
+│                   referencia del cobro en ese proveedor: el PaymentIntent de
+│                   Stripe o el id de la orden de PayPal
 └── motivoRechazo   solo cuando status = rechazado
 ```
 
@@ -295,13 +327,33 @@ Disponibilidad
 
 ```text
 Noticia
-├── titulo, extracto, contenido, imagenPortada
+├── titulo, extracto, contenido
+├── imagenPortada   referencia en R2, ya sea subida o copiada de un enlace
+├── instagramPost   permalink de la publicación, si se ilustró con una
 ├── categoria       EVENTO | RESULTADO | CLUB | PROMOCION | GENERAL
 ├── fechaEvento, horaInicio, horaFin, lugar    (solo tienen sentido en EVENTO)
 ├── publicada       nace en false
 ├── autor           referencia a User
 └── historial[]     { fecha, autor, accion, snapshot }
 ```
+
+### IntentoAcceso
+
+El contador del freno de fuerza bruta del login.
+
+```text
+IntentoAcceso
+├── clave            a quién cuenta: un usuario o una IP
+├── intentos         fallos acumulados
+├── bloqueadoHasta   hasta cuándo se rechaza
+└── expiraEn         cuándo se borra el documento
+```
+
+Vive en Mongo y no en memoria **porque el despliegue es serverless**: cada petición
+puede caer en una instancia distinta, así que un contador en memoria no cuenta nada.
+
+Se limpia sola: un índice TTL sobre `expiraEn` hace que Mongo borre el documento
+cuando la fecha queda atrás. No hay tarea de mantenimiento que escribir.
 
 ### Semilla
 
@@ -320,7 +372,9 @@ sobre datos que importen.
 | MongoDB + Mongoose 8 | Persistencia y esquemas |
 | JSON Web Token | Sesión sin estado (8 h de vigencia) |
 | bcryptjs | Hash de contraseñas |
-| Stripe 22 | Cobro con tarjeta (PaymentIntent + webhook) |
+| Stripe 22 | Cobro con tarjeta y con Bizum (PaymentIntent + webhook) |
+| PayPal Orders v2 | Cobro con PayPal. Se habla con su API REST por `fetch`, **sin SDK**: son tres llamadas (token, crear orden, capturar) y el SDK oficial traería mucha más superficie de la que se usaría |
+| Resend | Correo transaccional, también por REST y sin SDK, por el mismo motivo |
 | `@aws-sdk/client-s3` | Cliente de Cloudflare R2 (API compatible con S3) |
 | Multer 2 | Recepción de archivos en memoria antes de subirlos a R2 |
 | cors | Origen configurable por entorno |
@@ -348,11 +402,20 @@ Todas las variables se leen de `.env` en local y del panel de Vercel en producci
 | `PORT` | Puerto HTTP local (por defecto 3000) | No |
 | `ENVIRONMENT` | `development` o `production` | No |
 | `ALLOWED_ORIGINS` | Orígenes CORS separados por coma; admite comodín (`https://*.midominio.dev`) y `*` permite todos | Sí |
-| `STRIPE_SECRET_KEY` | Clave secreta de Stripe | No — sin ella no se puede cobrar |
+| `STRIPE_SECRET_KEY` | Clave secreta de Stripe (tarjeta y Bizum) | No — sin ella no se puede cobrar |
 | `STRIPE_WEBHOOK_SECRET` | Secreto de firma del webhook | No — sin él el webhook rechaza |
+| `PAYPAL_CLIENT_ID` | Credencial de la app REST de PayPal | No — sin ella no se puede cobrar con PayPal |
+| `PAYPAL_CLIENT_SECRET` | Credencial de la app REST de PayPal | No |
+| `PAYPAL_ENTORNO` | `live` apunta a la API real; cualquier otro valor, al sandbox | No |
+| `PAYPAL_WEBHOOK_ID` | Verifica la firma de los avisos de PayPal | No — sin él se rechaza el webhook entero |
+| `RESEND_API_KEY` | Envío del correo de recuperación | No — sin ella el correo no sale |
+| `CORREO_REMITENTE` | Remitente de ese correo, dominio verificado en Resend | No |
 
-Las dos de Stripe **no bloquean el arranque**, pero sin ellas la pasarela no funciona.
-En el `.env` local actual están vacías.
+Las de pago y las de correo **no bloquean el arranque**, y es a propósito: el `seed`, los
+tests manuales y el desarrollo sin pasarela no tienen por qué exigir credenciales de
+producción. Lo que falla, con un mensaje que nombra la variable, es el intento de cobrar;
+el correo degrada más suave todavía y solo deja aviso en el log. En el `.env` local
+actual están todas vacías.
 
 ```env
 DB_URL=<database-url>
@@ -394,6 +457,8 @@ pnpm seed
 
 ```bash
 pnpm dev          # ts-node-dev con recarga, en http://localhost:3000
+pnpm verificar    # tsc --noEmit, sin generar nada
+pnpm humo         # prueba de humo contra el servidor local (ver sección 11)
 ```
 
 ### Producción
@@ -411,14 +476,41 @@ serverless.
 
 ## 11. Tests
 
-**En el estado revisado no existen tests automatizados en este repositorio.** No hay
-framework de pruebas declarado en `package.json` ni ficheros `*.test.ts` o `*.spec.ts`.
+Hay dos verificaciones, y ninguna necesita framework de pruebas: **no hay Jest ni
+Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
 
-La verificación disponible hoy es la comprobación de tipos:
+### Comprobación de tipos
 
 ```bash
-npx tsc --noEmit
+pnpm verificar    # tsc --noEmit
 ```
+
+### Prueba de humo
+
+`scripts/humo.ts` recorre la API entera por HTTP, como lo haría un cliente. Son 54
+comprobaciones y cada una espera un código de estado concreto:
+
+```bash
+pnpm dev          # en una terminal
+pnpm humo         # en otra
+```
+
+Cubre la autenticación, el CRUD de productos, servicios, disponibilidad y noticias, el
+ciclo de un pedido con los tres métodos de pago, los dos webhooks sin firma y la
+recuperación de contraseña. Termina con código de salida distinto de cero si algo
+falla.
+
+Dos cosas que conviene saber antes de ejecutarla:
+
+- **Escribe en la base de datos a la que apunte `MONGODB_URI`.** Crea sus propios
+  registros, los prefija con `HUMO` y los borra al terminar, pero no está pensada para
+  correr contra producción.
+- **No cobra nada.** Los pagos se ejercitan hasta donde se puede sin claves: comprueba
+  que un método inventado se rechaza, que PayPal exige la URL de vuelta, y que los dos
+  webhooks rechazan una firma que no es válida.
+
+Lo que no cubre: la subida de archivos a R2, el envío real de correo y el cobro
+completo con las pasarelas, porque las tres cosas necesitan credenciales.
 
 ---
 
@@ -444,6 +536,13 @@ Error:
 
 Códigos usados: `400` datos inválidos, `401` sin token, `403` sin permiso, `404` no
 encontrado, `409` conflicto de estado, `500` error interno.
+
+Un cuerpo al que le falte un campo obligatorio, o que traiga un valor fuera de rango,
+responde **400 nombrando los campos** (`Datos no validos: subcategoria`). El resto del
+mensaje de Mongoose se queda en el registro del servidor: nombra colecciones, índices y
+rutas internas, y eso es un mapa gratis de la aplicación para quien la esté sondeando.
+La regla vive en `sendServerError` (`src/shared/controller.utils.ts`) y por tanto vale
+para todos los controladores a la vez.
 
 ### Grupos
 
@@ -484,15 +583,19 @@ Vercel
 └── función  api/index.ts  →  reexporta la app Express de index.ts
     ├── MongoDB Atlas       (DB_URL)
     ├── Cloudflare R2       (R2_*)
-    └── Stripe              (STRIPE_*)
+    ├── Stripe              (STRIPE_*)   tarjeta y Bizum
+    ├── PayPal              (PAYPAL_*)
+    └── Resend              (RESEND_*)   correo de recuperación
 ```
 
 `vercel.json` reescribe todo el tráfico (`/(.*)`) hacia `/api`, y Vercel descubre
 automáticamente `api/index.ts` como la función.
 
 > **Sobre `api/index.ts`.** Es una sola línea que reexporta la app. Parece un resto
-> suelto y no lo es: mientras `vercel.json` no declare la función explícitamente, es lo
-> único que crea el endpoint.
+> suelto y no lo es: es lo único que crea el endpoint, y **no hay alternativa moderna**.
+> La propiedad `functions` de `vercel.json` solo acepta globs que apunten dentro de
+> `api/`, así que declarar el `index.ts` de la raíz exigiría `builds`, que es legado y
+> desactiva los ajustes del panel. Borrar este fichero deja el despliegue sin API.
 
 **Orden de despliegue: backend primero, frontend después.** El envoltorio
 `{ success, data }` es un contrato: el frontend nuevo contra un backend anterior rompe
@@ -551,16 +654,42 @@ se reserva también sala o entrenador, hay que cambiarlo en los dos a la vez.
 **Por qué existe.** Que Stripe acepte la tarjeta en el navegador no significa que el
 dinero esté cobrado: la respuesta del navegador se puede perder, falsear o interrumpir.
 
-**Cómo funciona.** El backend crea un PaymentIntent y devuelve un `clientSecret`. El
-navegador cobra con él y **no decide nada más**. Quien marca el pedido como `pagado` es
-el **webhook** de Stripe (`payment_intent.succeeded`), que llega servidor a servidor y
-va firmado. Ese mismo webhook consolida los horarios retenidos.
+**Cómo funciona.** Con Stripe y con Bizum, el backend crea un PaymentIntent y devuelve un
+`clientSecret`. El navegador cobra con él y **no decide nada más**: quien marca el pedido
+como `pagado` es el **webhook** (`payment_intent.succeeded`), que llega servidor a
+servidor y va firmado.
 
-**Qué hay que saber para tocarlo.** El webhook necesita el cuerpo **sin parsear** para
-verificar la firma: por eso `index.ts` monta `express.raw()` en
+PayPal no encaja en ese molde: el dinero se mueve en la llamada que hace el propio backend
+a `/capture`. Por eso el navegador ahí sí dispara la acción —pidiendo
+`POST /:id/pago/capturar`—, pero **sigue sin decidir nada**: lo que se cree no es lo que
+diga el navegador, sino lo que responda PayPal a esa captura, servidor a servidor.
+
+Y como el navegador puede no volver nunca —el cliente aprueba y cierra la pestaña—, PayPal
+avisa además por su cuenta con `CHECKOUT.ORDER.APPROVED`. Ese aviso captura igual. Así que
+un pago de PayPal tiene **dos** finales posibles, y pueden llegar los dos, en cualquier
+orden.
+
+Los tres caminos desembocan en la misma función, `marcarPagado`. Es el único sitio donde un
+pedido pasa a `pagado`, y por tanto el único donde se consolidan los horarios y se
+descuenta el stock. Si cada proveedor consolidara por su cuenta, acabarían divergiendo.
+
+**Qué hay que saber para tocarlo.** El webhook de Stripe necesita el cuerpo **sin parsear**
+para verificar la firma: por eso `index.ts` monta `express.raw()` en
 `/api/pedidos/webhook` **antes** de `express.json()`. Ese orden no es cosmético; al
-revés, la firma no valida nunca. Y el manejador es idempotente: si el pedido ya está
-`pagado`, sale sin hacer nada.
+revés, la firma no valida nunca. Y se monta con `app.post`, no con `app.use`: `use` casa
+por prefijo, así que le entregaría también un Buffer al webhook de PayPal, que cuelga de
+`/webhook/paypal` y sí quiere el cuerpo parseado.
+
+Los dos proveedores se autentican de forma distinta. Stripe firma con un secreto
+compartido; PayPal no, y hay que preguntarle a él si la firma es buena. Sin
+`PAYPAL_WEBHOOK_ID` no se puede verificar nada, así que su webhook **se rechaza** en vez de
+creérselo: falla cerrado.
+
+Todo es idempotente porque tiene que serlo: Stripe reintenta el webhook hasta recibir un
+2xx, el cliente puede recargar la página de retorno de PayPal, y el aviso de PayPal puede
+cruzarse con esa vuelta. Si el pedido ya está `pagado`, `marcarPagado` sale sin hacer nada;
+y la captura además viaja con un `PayPal-Request-Id` fijo, de modo que PayPal devuelve la
+captura que ya hizo en vez de cobrar dos veces.
 
 ### D. Las imágenes no se sirven desde R2
 
@@ -597,20 +726,26 @@ propagarse a los navegadores que ya lo tengan cacheado.
 Los seis dominios están implementados y responden: registro y login, perfil y
 direcciones, permisos por rol, catálogo de productos y de servicios con carga de
 imágenes, parrilla de disponibilidad con reserva de horario, pedidos con confirmación
-administrativa, cobro con tarjeta y noticias con historial. Comprobado en local contra
-MongoDB Atlas.
+administrativa, cobro y noticias con historial. Comprobado en local contra MongoDB Atlas,
+salvo el cobro: ver el párrafo siguiente.
 
-**El único método de pago operativo es Stripe.** El servidor rechaza cualquier otro
-proveedor con `400`. En el `.env` local las dos claves de Stripe están vacías, así que
-la pasarela no se puede ejercitar sin rellenarlas.
+**Hay tres métodos de pago escritos —tarjeta, Bizum y PayPal— y ninguno ejercitado.**
+Las claves de Stripe y de PayPal están vacías en el `.env` local, así que la pasarela no
+se puede probar sin rellenarlas. Bizum además hay que activarlo en el panel de Stripe.
 
-**La recuperación de contraseña genera el token pero no lo entrega**: no hay envío de
-correo implementado.
+**La recuperación de contraseña está completa salvo el proveedor de correo.** El circuito
+—token, enlace a `<origen>/recuperar?token=`, pantalla, cambio de contraseña, token
+quemado tras usarse— se probó de punta a punta contra MongoDB. Sin `RESEND_API_KEY` lo
+único que no ocurre es el envío: el flujo responde igual y lo avisa en el log.
 
-**El registro exige `profile` en el cuerpo de la petición.** Sin él Mongoose rechaza
-con `Path 'profile' is required`, y el `.env.example` no lo menciona.
+**El registro exige `profile` en el cuerpo de la petición**, con el nombre y los
+apellidos dentro. Sin él responde `400 Datos no validos: profile`, y queda anotado en
+la referencia de endpoints.
 
-No hay tests automatizados en el repositorio.
+**La verificación es una prueba de humo, no una suite de tests.** `pnpm humo` recorre
+la API entera por HTTP y hoy pasa sus 54 comprobaciones, pero no hay tests unitarios ni
+framework declarado: lo que no se puede ejercitar sin credenciales —el cobro real, la
+subida a R2 y el envío de correo— se queda fuera.
 
 Lo que falta por hacer está recogido en el
 [Checklist de pendientes](#17-checklist-de-pendientes).
@@ -647,7 +782,7 @@ sin saber por qué se hicieron así.
 Esta documentación representa el commit indicado en
 [Estado documentado](#1-estado-documentado). Para actualizarla:
 
-1. Usa `git log e5557b1..HEAD --oneline` solo para **localizar qué ha cambiado**.
+1. Usa `git log e83f11e..HEAD --oneline` solo para **localizar qué ha cambiado**.
 2. Identifica qué secciones quedan afectadas.
 3. **Lee el código actual** de esos módulos y documenta lo que hay ahora.
 4. Actualiza solo esas secciones.
@@ -672,23 +807,42 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 
 ### Bloquean el uso en producción
 
-- [ ] **PayPal y Bizum no cobran.** El frontend los ofrece en el selector de método de
-      pago; el servidor solo acepta `stripe` y devuelve `400` con cualquier otro
-      proveedor. Un cliente puede creer que ha pagado. — `src/payments/pago.controller.ts`
-- [ ] **Sin claves de Stripe configuradas en local.** `STRIPE_SECRET_KEY` y
-      `STRIPE_WEBHOOK_SECRET` están vacías, así que ni el cobro ni el webhook se pueden
-      probar. — `.env`, `src/payments/stripe.utils.ts`
+- [ ] **Ninguna credencial de cobro configurada.** `STRIPE_SECRET_KEY`,
+      `STRIPE_WEBHOOK_SECRET`, `PAYPAL_CLIENT_ID` y `PAYPAL_CLIENT_SECRET` están vacías.
+      El código de los tres métodos está escrito, pero **sin credenciales no se ha
+      ejercitado ni un cobro**: es lo único que separa la pasarela de estar terminada.
+      — `.env`, `src/payments/`
+- [ ] **Bizum sin activar en el panel de Stripe.** No tiene variables propias: se cobra a
+      través de Stripe y hay que habilitarlo en *Configuración › Métodos de pago*. Hasta
+      entonces, el botón de Bizum falla al crear el PaymentIntent. — panel de Stripe
 
 ### No bloquean
 
-- [ ] **El correo de recuperación de contraseña no se envía.** El token se genera y se
-      guarda, pero no sale del servidor. — `src/users/auth.controller.ts:116`
-- [ ] **El registro exige `profile` y no está documentado.** Una petición sin ese campo
-      falla con `Path 'profile' is required`. — `src/users/auth.controller.ts`,
-      `.env.example`
-- [ ] **Sin tests automatizados.** No hay framework declarado en `package.json` ni
-      ficheros `*.test.ts` o `*.spec.ts` en el repositorio.
-- [ ] **`api/index.ts` frente a declarar la función en `vercel.json`.** Hoy el endpoint
-      existe por el descubrimiento automático de Vercel. Declararlo explícitamente
-      permitiría borrar la carpeta. Decisión de infraestructura sin tomar. —
-      `api/index.ts`, `vercel.json`
+- [ ] **Correo sin proveedor dado de alta.** `RESEND_API_KEY` y `CORREO_REMITENTE` están
+      vacías: el flujo responde con normalidad y el correo no sale, avisándolo en el log.
+      Es lo único que falta — el resto del circuito (token, enlace, pantalla `/recuperar`,
+      cambio de contraseña) está probado de punta a punta. — `.env`, `src/shared/correo.ts`
+- [ ] **Webhook de PayPal sin registrar.** El código está y verifica la firma, pero falta
+      darlo de alta en el panel apuntando a `/api/pedidos/webhook/paypal`, suscrito a
+      `CHECKOUT.ORDER.APPROVED`, y copiar su id en `PAYPAL_WEBHOOK_ID`. Sin él, un cliente
+      que apruebe y no vuelva al sitio deja el pedido a medias. — panel de PayPal, `.env`
+- [ ] **Sin tests unitarios.** `pnpm humo` recorre la API por HTTP, pero no hay framework
+      declarado en `package.json` ni ficheros `*.test.ts` o `*.spec.ts`. Lo que la prueba
+      de humo no puede tocar sin credenciales —cobro real, subida a R2, envío de
+      correo— sigue sin cubrir. — `package.json`, `scripts/humo.ts`
+
+### Cerrados
+
+- [x] **El registro exige `profile` y no está documentado.** Documentado en la referencia
+      de endpoints, con los campos que lleva dentro. Además ya no falla con un `500`
+      confuso: responde `400 Datos no validos: profile`. — `docs/api-endpoints.md`,
+      `src/shared/controller.utils.ts`
+- [x] **Sin ninguna verificación automatizada.** Cerrado con `pnpm humo`: 54
+      comprobaciones sobre la API en marcha, que limpian detrás de sí. Queda abierto lo
+      que necesita credenciales y los tests unitarios. — `scripts/humo.ts`
+
+- [x] **`api/index.ts` frente a declarar la función en `vercel.json`.** Decisión tomada:
+      **se queda**. La propiedad `functions` de `vercel.json` solo admite globs que apunten
+      dentro de `api/`, así que declarar `index.ts` de la raíz exigiría la propiedad
+      `builds`, que es legado y desactiva los ajustes del panel. El fichero de una línea es
+      el camino soportado. — `api/index.ts`, `vercel.json`
