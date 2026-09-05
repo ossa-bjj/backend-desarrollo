@@ -166,6 +166,32 @@ export const copiarImagenRemotaAR2 = async (origen: string, nombreBase: string):
  * Lo que ya vive en el bucket se queda como esta —volver a editar la noticia no
  * puede duplicar su imagen en cada guardado—; lo que viene de fuera se copia.
  */
+/**
+ * Saca el enlace del post del codigo de insercion de Instagram.
+ *
+ * Del bloque que da Instagram al pulsar «Insertar» solo hace falta el
+ * permalink: con el, su propio script monta la publicacion entera. Guardar el
+ * HTML tal cual seria meter en la base marcado ajeno con estilos y enlaces
+ * dentro, y habria que pintarlo sin escapar para que sirviera de algo.
+ *
+ * Admite tambien el enlace pelado, que es lo que sale de «Copiar enlace».
+ * Devuelve `null` si ahi no hay ningun post.
+ */
+export const enlaceDePostDeInstagram = (valor: string): string | null => {
+  const permalink =
+    /data-instgrm-permalink=["']([^"']+)["']/i.exec(valor)?.[1] ??
+    (/^\s*https?:\/\/(www\.)?instagram\.com\//i.test(valor) ? valor.trim() : null);
+
+  if (!permalink) return null;
+
+  // `/p/` son publicaciones y `/reel/` videos; ambos se pueden insertar.
+  const codigo = /instagram\.com\/(p|reel)\/([\w-]+)/i.exec(permalink);
+  if (!codigo) return null;
+
+  // Se normaliza sin los parametros de campana que arrastra el enlace copiado.
+  return `https://www.instagram.com/${codigo[1]}/${codigo[2]}/`;
+};
+
 export const resolverPortada = async (valor: string, nombreBase: string): Promise<string> => {
   const limpio = valor.trim();
   if (!limpio) return '';

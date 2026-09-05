@@ -36,6 +36,12 @@ export interface INoticia {
   extracto: string;
   contenido: string;
   imagenPortada?: string;
+  /**
+   * Enlace del post de Instagram que ilustra la noticia. Se guarda el enlace,
+   * no el codigo de insercion: el script de Instagram monta la publicacion a
+   * partir de el, y asi no entra marcado ajeno en la base.
+   */
+  instagramPost?: string;
   categoria: CategoriaNoticia;
   fechaEvento?: Date;
   horaInicio?: string;
@@ -96,6 +102,10 @@ const NoticiaSchema = new Schema<INoticia>(
       trim:     true,
     },
     imagenPortada: {
+      type: String,
+      trim: true,
+    },
+    instagramPost: {
       type: String,
       trim: true,
     },

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { NoticiaModelo, CategoriaNoticia, AccionHistorial, INoticia } from './noticia.model';
 import { sendServerError } from '../shared/controller.utils';
-import { resolverPortada } from '../shared/imagenRemota';
+import { enlaceDePostDeInstagram, resolverPortada } from '../shared/imagenRemota';
 import { deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 // Carga la declaracion global de Express.Request.user (definida en token.utils).
 import '../shared/token.utils';
@@ -19,6 +19,34 @@ const RUTAS_AUTOR = [
   { path: 'autor', select: AUTOR_POPULADO },
   { path: 'historial.autor', select: AUTOR_POPULADO },
 ] as const;
+
+/**
+ * Lo que ilustra una noticia: o un post de Instagram insertado, o una imagen
+ * copiada al bucket. Nunca las dos, para que el frontend no tenga que decidir.
+ */
+interface Ilustracion {
+  imagenPortada: string;
+  instagramPost: string;
+}
+
+/**
+ * El panel tiene un unico campo y admite las dos cosas, porque para quien
+ * escribe la noticia es lo mismo: pegar lo que ha copiado. Aqui se distingue.
+ *
+ * Un post de Instagram se guarda como enlace y lo monta su propio script; asi
+ * la foto se ve entera, mientras que la miniatura que Instagram publica en la
+ * pagina del post viene recortada a un cuadrado y no hay forma de pedirla sin
+ * recortar. Cualquier otro enlace se trata como imagen y se copia al bucket.
+ */
+const resolverIlustracion = async (valor: unknown, nombreBase: string): Promise<Ilustracion> => {
+  const texto = typeof valor === 'string' ? valor.trim() : '';
+  if (!texto) return { imagenPortada: '', instagramPost: '' };
+
+  const post = enlaceDePostDeInstagram(texto);
+  if (post) return { imagenPortada: '', instagramPost: post };
+
+  return { imagenPortada: await resolverPortada(texto, nombreBase), instagramPost: '' };
+};
 
 const noEncontrada = (res: Response): void => {
   res.status(404).json({ error: 'Noticia no encontrada' });
@@ -111,24 +139,20 @@ export const crearNoticia = async (req: Request, res: Response): Promise<void> =
 
     const autorId = req.user?.id;
 
-    // La portada se copia al bucket al guardar. Si el enlace no lleva a una
-    // imagen, se corta aqui con el motivo: guardar la noticia igualmente
-    // dejaria una portada que no se ve y nadie se enteraria hasta publicarla.
-    let portada = '';
-    if (imagenPortada) {
-      try {
-        portada = await resolverPortada(String(imagenPortada), String(titulo ?? 'portada'));
-      } catch (error) {
-        res.status(400).json({ error: (error as Error).message });
-        return;
-      }
+    let ilustracion: Ilustracion;
+    try {
+      ilustracion = await resolverIlustracion(imagenPortada, String(titulo ?? 'portada'));
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+      return;
     }
 
     const noticia = new NoticiaModelo({
       titulo,
       extracto,
       contenido,
-      imagenPortada: portada,
+      imagenPortada: ilustracion.imagenPortada,
+      instagramPost: ilustracion.instagramPost,
       categoria: categoria ?? CategoriaNoticia.GENERAL,
       fechaEvento,
       horaInicio,
@@ -180,7 +204,9 @@ export const actualizarNoticia = async (req: Request, res: Response): Promise<vo
 
     if (imagenPortada !== undefined) {
       try {
-        noticia.imagenPortada = await resolverPortada(String(imagenPortada), noticia.titulo);
+        const ilustracion = await resolverIlustracion(imagenPortada, noticia.titulo);
+        noticia.imagenPortada = ilustracion.imagenPortada;
+        noticia.instagramPost = ilustracion.instagramPost;
       } catch (error) {
         res.status(400).json({ error: (error as Error).message });
         return;
