@@ -1,7 +1,15 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { User } from './user.model';
+import { User, UserStatus } from './user.model';
+import {
+  bloqueadoHasta,
+  claveIp,
+  claveUsuario,
+  limpiarIntentos,
+  registrarFallo,
+  segundosHasta,
+} from './acceso.service';
 import { generateToken } from '../shared/token.utils';
 import { sendServerError } from '../shared/controller.utils';
 
@@ -43,17 +51,37 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const claves = [claveUsuario(String(username)), claveIp(req.ip ?? 'desconocida')];
+
+    const bloqueo = await bloqueadoHasta(claves);
+    if (bloqueo) {
+      res.set('Retry-After', String(segundosHasta(bloqueo)));
+      res.status(429).json({ error: 'Demasiados intentos fallidos. Inténtalo de nuevo más tarde' });
+      return;
+    }
+
     const user = await User.findOne({ username: String(username).toLowerCase().trim() }).select('+password');
     if (!user) {
+      await registrarFallo(claves);
       res.status(401).json({ error: 'Credenciales inválidas' });
       return;
     }
 
     const valid = await bcrypt.compare(password, user.password!);
     if (!valid) {
+      await registrarFallo(claves);
       res.status(401).json({ error: 'Credenciales inválidas' });
       return;
     }
+
+    // Un usuario baneado no entra. Comprobarlo solo al usar cada ruta llegaba
+    // tarde: el token ya estaba emitido y valia ocho horas.
+    if (user.status === UserStatus.BANNED) {
+      res.status(403).json({ error: 'Esta cuenta está bloqueada' });
+      return;
+    }
+
+    await limpiarIntentos(claves);
 
     user.metadata.lastLogin = new Date();
     await user.save();

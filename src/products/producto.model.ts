@@ -9,6 +9,24 @@ export enum Categoria {
   ACCESORIOS = "ACCESORIOS" // Mochilas, cinturones, gorras, complementos
 }
 
+/**
+ * Dos primeros dígitos del `codigoArticulo` de cada categoría. No es una
+ * convención de presentación: reparte el espacio de códigos entre categorías
+ * (y deja el rango 60XX a los servicios), así que la regla vive junto al modelo
+ * que la sufre. El formulario del panel replica el mapa solo para poder avisar
+ * antes de enviar; quien la hace cumplir es el servidor.
+ */
+export const PREFIJO_CATEGORIA: Record<Categoria, string> = {
+  [Categoria.ROPA_ENTRENAMIENTO]: "10",
+  [Categoria.PROTECCIONES]:       "20",
+  [Categoria.ROPA_CALLE]:         "30",
+  [Categoria.ACCESORIOS]:         "40",
+  [Categoria.CALZADO]:            "50",
+};
+
+export const esCategoria = (valor: unknown): valor is Categoria =>
+  typeof valor === "string" && Object.values(Categoria).includes(valor as Categoria);
+
 // 2. Interfaz para el producto
 export interface IProduct {
   codigoArticulo: number;

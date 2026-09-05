@@ -10,6 +10,7 @@ import {
   consolidarSlotsDePedido,
   reasignarSlot,
 } from '../availability/disponibilidad.service';
+import { leerCriteriosPedido, listarPedidos } from './order.service';
 import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
 
 // Linea de pedido tal y como la envia el cliente: solo dice QUE quiere y CUANTO.
@@ -51,13 +52,20 @@ const esCodigoDeServicio = (codigo: number): boolean =>
 
 const redondearEuros = (valor: number): number => Math.round(valor * 100) / 100;
 
-// GET /api/pedidos
+// GET /api/pedidos?status=&usuario=&desde=&hasta=&pagina=&limite=
+// Quien no es admin queda acotado a sus propios pedidos: el filtro de usuario
+// lo impone el servidor con la identidad del token, no la query.
 export const getOrders = async (req: Request, res: Response): Promise<void> => {
   try {
-    const filter = esAdmin(req) ? {} : { user: req.user!.id };
-    const orders = await Order.find(filter).sort({ createdAt: -1 }).populate('user', 'username email');
+    const lectura = leerCriteriosPedido(req.query, esAdmin(req), req.user!.id);
+    if (!lectura.ok) {
+      res.status(400).json({ error: lectura.error });
+      return;
+    }
 
-    res.status(200).json({ success: true, data: orders });
+    const { pedidos, total, pagina, limite } = await listarPedidos(lectura.criterios);
+
+    res.status(200).json({ success: true, data: pedidos, meta: { total, pagina, limite } });
   } catch (error) {
     sendServerError(res, 'Error obteniendo pedidos', error);
   }

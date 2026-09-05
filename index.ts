@@ -17,6 +17,12 @@ validateEnvironment();
 
 const app = express();
 
+// Detras del proxy de Vercel, `req.ip` sin esto es la IP del propio proxy: el
+// freno por IP del login estaria contando a todo el mundo como el mismo
+// visitante. Un solo salto de confianza, para que la cabecera reenviada no la
+// pueda falsear el cliente.
+app.set('trust proxy', 1);
+
 // --- MIDDLEWARES ---
 // Stripe firma el cuerpo tal cual lo envia, asi que el webhook necesita el
 // Buffer sin parsear. express.json() detecta que el cuerpo ya se leyo y lo

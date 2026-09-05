@@ -1,10 +1,22 @@
 import { Request, Response } from 'express';
-import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from './servicio.model';
+import { ServicioModelo, IServicio, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from './servicio.model';
 import { sendServerError } from '../shared/controller.utils';
+import { soloCampos } from '../shared/actualizacion.utils';
 import { uploadToR2, deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 
 // Orden estable para la landing: primero el campo `orden`, luego el codigo.
 const ORDEN_LISTADO = { orden: 1, codigoArticulo: 1 } as const;
+
+/**
+ * Campos que una actualizacion puede tocar. El codigo no esta: identifica al
+ * servicio y no se reasigna.
+ */
+const CAMPOS_ACTUALIZABLES = [
+  'nombre', 'precio', 'subcategoria',
+  'descripcionCorta', 'descripcionCompleta', 'modalidad',
+  'duracion', 'plazas', 'requiereReserva', 'requiereConfirmacion',
+  'activo', 'imagenes', 'tags', 'orden',
+] as const;
 
 // Express 5 tipa los parametros de ruta como string | string[].
 const parseCodigo = (valor: string | string[]): number | null => {
@@ -116,8 +128,9 @@ export const actualizarServicio = async (req: Request, res: Response): Promise<v
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    // El codigo identifica al servicio: no se reasigna desde el body.
-    const { codigoArticulo: _ignorado, ...cambios } = req.body;
+    // Solo los campos conocidos: el codigo identifica al servicio y no se
+    // reasigna, y el cuerpo en crudo permitiria colar operadores de Mongo.
+    const cambios = soloCampos<IServicio>(req.body, CAMPOS_ACTUALIZABLES);
 
     const servicio = await ServicioModelo.findOneAndUpdate(
       { codigoArticulo: codigo },

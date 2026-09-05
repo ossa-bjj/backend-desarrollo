@@ -583,10 +583,12 @@ que conviven ambos formatos. Por el mismo motivo `keyFromPublicUrl` no depende d
 `R2_PUBLIC_DOMAIN`: si dependiera, al cambiar de dominio dejaría de reconocer las URL
 antiguas y los borrados fallarían en silencio, dejando huérfanos en el bucket.
 
-La única clave sin marca de tiempo es `defaults/nodisponible.jpg`, que la semilla
-sobrescribe en cada ejecución para no acumular una copia por siembra. Al servirse con
-`immutable`, un cambio de esa imagen tardaría en propagarse a los navegadores que ya la
-tengan cacheada.
+La única clave sin marca de tiempo es `defaults/nodisponible.jpg`, el placeholder que la
+semilla asigna a productos y servicios. Vive en el bucket y la semilla solo la referencia:
+no se guarda copia en el repositorio ni se resube en cada siembra, así que el binario no
+viaja en el control de versiones ni hay que mantener el mismo fichero en dos sitios. Para
+reemplazarlo, se sube a esa misma key. Al servirse con `immutable`, el cambio tardaría en
+propagarse a los navegadores que ya lo tengan cacheado.
 
 ---
 

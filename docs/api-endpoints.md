@@ -4,6 +4,10 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 **Forma de la respuesta.** Toda respuesta correcta llega envuelta: `{ success: true, data }` cuando devuelve un recurso o una colección, `{ success: true, message }` cuando solo confirma la operación. Los errores responden `{ error }` en cualquier código 4xx o 5xx. La única excepción es `POST /pedidos/webhook`, cuyo `{ received: true }` lo impone Stripe.
 
+**Errores.** Un fallo no previsto responde `500 { error }` con un mensaje genérico. El detalle se registra en el servidor y no viaja al cliente: los mensajes de Mongoose nombran colecciones, campos e índices, y eso es un mapa gratis de la aplicación.
+
+**Listados paginados.** `GET /productos`, `GET /users` y `GET /pedidos` añaden `meta: { total, pagina, limite }`. `data` es la página; `total` cuenta todo lo que cumple el filtro. Ambos aceptan `?pagina=` (desde 1) y `?limite=` (100 por defecto, 500 como máximo); un valor ilegible cae al valor por defecto en lugar de dar error. **Todo el filtrado se resuelve en el servidor**: el cliente envía criterios y pinta lo que recibe, sin recortarlo.
+
 ## Estado y medios
 
 | Método | Ruta | Acceso | Descripción |
@@ -16,12 +20,12 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
 | POST | `/register` | Público | Registra un usuario. |
-| POST | `/login` | Público | Inicia sesión y obtiene token. |
+| POST | `/login` | Público | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada. |
 | POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. |
 | POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
 | GET | `/me` | Autenticado | Devuelve el usuario de la sesión. |
 | POST | `/` | Admin | Crea un usuario. |
-| GET | `/` | Admin | Lista usuarios. |
+| GET | `/` | Admin | Lista personas. Filtros combinables: `?q=` (usuario, email, nombre o apellido), `?username=`, `?email=`, `?role=`, `?status=`, `?customer=true\|false`, `?license=`. Sin filtros devuelve la primera página de todas. Orden: `?orden=` (`nombre`, `username`, `email`, `role`, `status`, `cliente`, `licencia`, `alta`) y `?direccion=asc\|desc`; por defecto `nombre` ascendente. `role` y `status` fuera de su enumeración devuelven `400`; una columna de orden desconocida cae al orden por defecto. |
 | GET | `/:id` | Admin | Obtiene un usuario por identificador. |
 | PUT | `/:id` | Autenticado | Actualiza un usuario. |
 | PATCH | `/:id/password` | Autenticado | Cambia la contraseña. |
@@ -41,16 +45,18 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 ## Productos (`/productos`)
 
+Los dos primeros dígitos del `codigoArticulo` declaran la categoría: `10` ropa de
+entrenamiento, `20` protecciones, `30` ropa de calle, `40` accesorios, `50` calzado. El rango
+`6000`–`6999` pertenece a los servicios. El servidor hace cumplir la correspondencia entre
+código y categoría al crear y al actualizar.
+
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
-| GET | `/` | Público | Lista productos. |
-| GET | `/search` | Público | Busca productos. |
-| GET | `/destacados` | Público | Lista productos destacados. |
-| GET | `/categoria/:categoria` | Público | Lista productos de una categoría. |
-| GET | `/marca/:marca` | Público | Lista productos de una marca. |
+| GET | `/` | Público | Lista productos. Filtros combinables: `?categoria=`, `?codigo=` (fragmento, 1 a 4 dígitos), `?nombre=`, `?marca=`, `?q=` (texto completo), `?destacado=true\|false`. Sin filtros devuelve la primera página del catálogo. Una categoría o un código no válidos devuelven `400`. |
+| GET | `/siguiente-codigo` | Admin | `?categoria=`. Primer código libre de la serie. `409` si los cien códigos de la categoría están ocupados. |
 | GET | `/:codigoArticulo` | Público | Obtiene un producto por código de artículo. |
-| POST | `/` | Admin | Crea un producto. |
-| PUT | `/:codigoArticulo` | Admin | Actualiza un producto. |
+| POST | `/` | Admin | Crea un producto. `400` si el código no cuadra con el prefijo de su categoría. |
+| PUT | `/:codigoArticulo` | Admin | Actualiza un producto. El código no se reasigna, así que cambiar `category` a una que no case con el código devuelve `400`. |
 | PATCH | `/:codigoArticulo/stock` | Admin | Actualiza el stock. |
 | POST | `/:codigoArticulo/imagenes` | Admin | Sube hasta diez archivos en el campo multipart `imagenes`. |
 | DELETE | `/:codigoArticulo/imagenes` | Admin | Elimina una imagen del producto. |
@@ -60,7 +66,7 @@ Prefijo base: `/api`. Las rutas protegidas requieren `Authorization: Bearer <tok
 
 | Método | Ruta | Acceso | Descripción |
 | --- | --- | --- | --- |
-| GET | `/` | Autenticado | Lista pedidos según el usuario autenticado. Un admin ve todos. |
+| GET | `/` | Autenticado | Lista pedidos, más recientes primero. Filtros: `?status=`, `?desde=`/`?hasta=` (`YYYY-MM-DD`, ambos inclusive) y, **solo para un admin**, `?usuario=`. A quien no es admin el servidor le impone su propia identidad como dueño, así que `?usuario=` no sirve para leer pedidos ajenos. Paginado (50 por defecto, 200 máximo). |
 | POST | `/` | Autenticado | Crea un pedido. El cuerpo solo lleva `items: [{ codigoArticulo, quantity, slotId?, slotLabel? }]` y `shippingAddress?`: nombre, precio y total se resuelven en el servidor contra el catálogo. |
 | GET | `/:id` | Autenticado | Obtiene un pedido por identificador. |
 | PATCH | `/:id/confirmar` | Admin | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. |
