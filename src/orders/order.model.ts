@@ -41,6 +41,13 @@ export interface IOrderItem {
   // Reserva asociada cuando la linea es un servicio con horario.
   slotId?: string;
   slotLabel?: string;
+  /**
+   * Talla pedida, cuando la linea es un producto. Se guarda en el pedido y no
+   * se consulta al catalogo porque el stock del que hay que descontar es el de
+   * ESTA talla, y porque el pedido tiene que seguir diciendo que se compro
+   * aunque el producto cambie de tallas despues.
+   */
+  talla?: string;
 }
 
 export interface IOrder {
@@ -60,7 +67,28 @@ export interface IOrder {
     paymentIntentId: string;
     estado: string;
     pagadoEn?: Date;
+    /**
+     * Referencia del reembolso en la pasarela y cuando se hizo. Se guarda para
+     * que el panel pueda distinguir un pedido cancelado y devuelto de uno
+     * cancelado a secas, y para no reembolsar dos veces el mismo cobro.
+     */
+    reembolsoId?: string;
+    reembolsadoEn?: Date;
   };
+  /**
+   * Lineas que se cobraron sin existencias suficientes.
+   *
+   * Vive en el pedido y no solo en el log del servidor porque hay que actuar
+   * sobre ella: el dinero esta cobrado y el articulo no existe, asi que alguien
+   * tiene que ver el caso y decidir si repone o devuelve. Un `console.error` no
+   * lo lee nadie.
+   */
+  incidenciasStock?: Array<{
+    codigoArticulo: number;
+    talla?: string;
+    solicitadas: number;
+    detectadaEn: Date;
+  }>;
   confirmadoEn?: Date;
   confirmadoPor?: Types.ObjectId;
   motivoRechazo?: string;
@@ -83,6 +111,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
     motivoAjuste:   { type: String, trim: true },
     slotId:    { type: String, trim: true },
     slotLabel: { type: String, trim: true },
+    talla:     { type: String, trim: true },
   },
   { _id: false },
 );
@@ -124,6 +153,22 @@ const OrderSchema = new Schema<IOrder>(
       paymentIntentId: { type: String, trim: true, index: true },
       estado:          { type: String, trim: true },
       pagadoEn:        { type: Date },
+      reembolsoId:     { type: String, trim: true },
+      reembolsadoEn:   { type: Date },
+    },
+    incidenciasStock: {
+      type: [
+        new Schema(
+          {
+            codigoArticulo: { type: Number, required: true },
+            talla:          { type: String, trim: true },
+            solicitadas:    { type: Number, required: true },
+            detectadaEn:    { type: Date, required: true, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
     },
     confirmadoEn:  { type: Date },
     confirmadoPor: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -141,13 +186,14 @@ export const Order = model<IOrder>('Order', OrderSchema);
  * Identidad de una linea dentro de un pedido.
  *
  * No basta el codigo de articulo: un pedido puede llevar dos sesiones del mismo
- * servicio a horas distintas, y son dos lineas legitimas y distinguibles. La
- * identidad es articulo MAS horario.
+ * servicio a horas distintas, o la misma camiseta en dos tallas, y en los dos
+ * casos son lineas legitimas y distinguibles. La identidad es articulo MAS
+ * horario MAS talla.
  *
  * Existe como funcion unica a proposito. El alta del pedido y la confirmacion
  * del presupuesto tienen que generar exactamente la misma identidad para la
  * misma linea; si divergen, los ajustes del admin dejan de encontrar su linea
  * en silencio, sin error, sin aplicarse.
  */
-export const identidadLinea = (codigoArticulo: number, slotId?: string): string =>
-  `${codigoArticulo}#${slotId ?? ''}`;
+export const identidadLinea = (codigoArticulo: number, slotId?: string, talla?: string): string =>
+  `${codigoArticulo}#${slotId ?? ''}#${talla ?? ''}`;

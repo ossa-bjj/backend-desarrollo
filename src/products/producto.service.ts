@@ -1,5 +1,14 @@
 import { FilterQuery, HydratedDocument } from 'mongoose';
-import { Categoria, IProduct, PREFIJO_CATEGORIA, ProductoModelo, esCategoria } from './producto.model';
+import {
+  Categoria,
+  IProduct,
+  ITallaStock,
+  PREFIJO_CATEGORIA,
+  ProductoModelo,
+  TALLAS,
+  esCategoria,
+  esTalla,
+} from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import {
   booleanoDeQuery,
@@ -193,6 +202,106 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
 };
 
 
+// --- Tallas y existencias ---
+
+/**
+ * Las reglas de talla viven aqui y no en quien las consulta porque tienen dos
+ * consumidores que deben coincidir: el alta del pedido, que decide si se puede
+ * vender, y el cobro, que descuenta lo vendido. Si cada uno resolviera el stock
+ * a su manera se podria aceptar un pedido y descontar de otra talla.
+ */
+
+/** Unidades disponibles de una talla. Cero si el producto no la vende. */
+export const stockDeTalla = (producto: Pick<IProduct, 'tallas'>, talla: string): number =>
+  producto.tallas.find((t) => t.talla === talla)?.stock ?? 0;
+
+/** Todas las tallas a cero: el punto de partida de un producto nuevo. */
+export const tallasVacias = (): ITallaStock[] => TALLAS.map((talla) => ({ talla, stock: 0 }));
+
+/**
+ * Normaliza lo que llega del panel a las cinco tallas, en orden y sin repetir.
+ *
+ * Un formulario puede mandarlas desordenadas, incompletas o con una talla
+ * inventada. Guardar eso tal cual dejaria productos a los que les falta una
+ * talla, y entonces «no la vende» y «esta agotada» pasarian a ser lo mismo.
+ */
+export const normalizarTallas = (valor: unknown): ITallaStock[] | null => {
+  if (!Array.isArray(valor)) return null;
+
+  const porTalla = new Map<string, number>();
+  for (const entrada of valor) {
+    const talla = (entrada as { talla?: unknown })?.talla;
+    const stock = Number((entrada as { stock?: unknown })?.stock);
+
+    if (!esTalla(talla)) return null;
+    if (!Number.isInteger(stock) || stock < 0) return null;
+    porTalla.set(talla, stock);
+  }
+
+  return TALLAS.map((talla) => ({ talla, stock: porTalla.get(talla) ?? 0 }));
+};
+
+/**
+ * Decide si se pueden vender `cantidad` unidades de una talla.
+ *
+ * Devuelve el motivo por el que no se puede, o null si se puede. El texto sale
+ * de aqui para que el cliente lea lo mismo venga del alta del pedido o del
+ * cobro.
+ */
+export const motivoParaNoVender = (
+  producto: Pick<IProduct, 'name' | 'tallas'>,
+  talla: unknown,
+  cantidad: number,
+): string | null => {
+  // Un producto se vende por tallas, asi que sin talla no hay de donde
+  // descontar: pedir «una camiseta» sin decir cual es una peticion incompleta.
+  //
+  // Se distingue no haber puesto talla de haber puesto una que no existe: son
+  // dos errores distintos y decir «falta la talla» a quien mando «XXXL» manda a
+  // buscar el fallo donde no esta.
+  if (talla === undefined || talla === null || talla === '') {
+    return `Falta la talla de "${producto.name}"`;
+  }
+
+  if (!esTalla(talla) || !producto.tallas.some((t) => t.talla === talla)) {
+    return `"${producto.name}" no se vende en talla ${String(talla)}`;
+  }
+
+  const disponibles = stockDeTalla(producto, talla);
+  if (cantidad > disponibles) {
+    return `Solo quedan ${disponibles} unidades de "${producto.name}" en talla ${talla}`;
+  }
+
+  return null;
+};
+
+/**
+ * Descuenta unidades de una talla concreta.
+ *
+ * El filtro exige que quede stock suficiente EN ESA TALLA, asi que dos cobros
+ * simultaneos del ultimo articulo no pueden dejarlo en negativo: el segundo no
+ * encuentra documento que actualizar.
+ */
+export const descontarStockDeTalla = (codigo: number, talla: string, cantidad: number) =>
+  ProductoModelo.findOneAndUpdate(
+    { codigoArticulo: codigo, tallas: { $elemMatch: { talla, stock: { $gte: cantidad } } } },
+    { $inc: { 'tallas.$[entrada].stock': -cantidad } },
+    { arrayFilters: [{ 'entrada.talla': talla }], new: true },
+  );
+
+/**
+ * Devuelve unidades a una talla. Lo contrario de descontar, para cuando se
+ * cancela un pedido ya cobrado.
+ *
+ * Aqui no hay condicion que comprobar: sumar nunca deja el stock en negativo.
+ */
+export const devolverStockDeTalla = (codigo: number, talla: string, cantidad: number) =>
+  ProductoModelo.findOneAndUpdate(
+    { codigoArticulo: codigo, 'tallas.talla': talla },
+    { $inc: { 'tallas.$[entrada].stock': cantidad } },
+    { arrayFilters: [{ 'entrada.talla': talla }], new: true },
+  );
+
 // --- Actualizacion ---
 
 /**
@@ -200,7 +309,7 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
  * producto y no se reasigna.
  */
 const CAMPOS_ACTUALIZABLES = [
-  'name', 'price', 'description', 'stock',
+  'name', 'price', 'description', 'tallas',
   'category', 'subcategoria', 'marca', 'imagenes', 'tags',
 ] as const;
 
@@ -227,10 +336,10 @@ export const actualizarProducto = (codigo: number, cambios: Partial<IProduct>) =
     { new: true, runValidators: true },
   );
 
-export const actualizarStock = (codigo: number, stock: number) =>
+export const actualizarStock = (codigo: number, tallas: ITallaStock[]) =>
   ProductoModelo.findOneAndUpdate(
     { codigoArticulo: codigo },
-    { stock },
+    { tallas },
     { new: true, runValidators: true },
   );
 

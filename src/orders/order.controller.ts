@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { isValidObjectId, Types } from 'mongoose';
 import { Order, OrderStatus, OrderItemTipo, identidadLinea } from './order.model';
-import { ProductoModelo } from '../products/producto.model';
+import { ProductoModelo, esTalla, type ITallaStock } from '../products/producto.model';
+import { motivoParaNoVender } from '../products/producto.service';
+import { reembolsarPedido, type ResultadoReembolso } from '../payments/reembolso.service';
 import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import { normalizarUrlMedia } from '../shared/r2.utils';
 import {
@@ -21,6 +23,8 @@ interface LineaPedidoInput {
   quantity:       unknown;
   slotId?:        unknown;
   slotLabel?:     unknown;
+  /** Obligatoria en los productos: el stock se lleva por talla. */
+  talla?:         unknown;
 }
 
 // Entrada del catalogo ya normalizada, sea producto o servicio.
@@ -29,8 +33,13 @@ interface EntradaCatalogo {
   price:     number;
   image?:    string;
   tipo:      OrderItemTipo;
-  // Tope de unidades vendibles: stock en productos, plazas en servicios.
+  /**
+   * Tope de unidades vendibles cuando NO depende de la talla: las plazas de un
+   * servicio. En un producto el tope lo pone la talla pedida, asi que viaja en
+   * `tallas` y se resuelve por linea.
+   */
   maximo:    number;
+  tallas?:   ITallaStock[];
   etiqueta:  string;
   // Si alguna linea lo pide, el pedido entero pasa por confirmacion previa.
   requiereConfirmacion: boolean;
@@ -130,10 +139,14 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     // Dos sesiones del mismo servicio a distinta hora son dos lineas legitimas.
     // Lo que no se admite es repetir exactamente la misma combinacion.
     const claves = lineas.map((linea, i) =>
-      identidadLinea(codigos[i], typeof linea.slotId === 'string' ? linea.slotId : undefined));
+      identidadLinea(
+        codigos[i],
+        typeof linea.slotId === 'string' ? linea.slotId : undefined,
+        typeof linea.talla === 'string' ? linea.talla : undefined,
+      ));
 
     if (new Set(claves).size !== claves.length) {
-      res.status(400).json({ error: 'El pedido repite el mismo articulo y horario dos veces' });
+      res.status(400).json({ error: 'El pedido repite el mismo articulo, horario y talla dos veces' });
       return;
     }
 
@@ -158,7 +171,8 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
         price:    producto.price,
         image:    normalizarUrlMedia(producto.imagenes?.[0] ?? ''),
         tipo:     OrderItemTipo.PRODUCTO,
-        maximo:   producto.stock,
+        maximo:   producto.tallas.reduce((total, t) => total + t.stock, 0),
+        tallas:   producto.tallas,
         etiqueta: 'unidades en stock',
         requiereConfirmacion: false,
       });
@@ -180,7 +194,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 
     // --- Construccion de las lineas definitivas ---
     const itemsResueltos = [];
-    const unidadesPorArticulo = new Map<number, number>();
+    const unidadesPorArticulo = new Map<string, number>();
     let total = 0;
 
     for (let i = 0; i < lineas.length; i += 1) {
@@ -199,18 +213,41 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
         return;
       }
 
-      // Con varias lineas del mismo articulo hay que sumar: tres reservas de una
-      // plaza agotan un servicio de tres plazas igual que una reserva de tres.
-      const acumulado = (unidadesPorArticulo.get(codigo) ?? 0) + quantity;
-      if (acumulado > entrada.maximo) {
-        res.status(409).json({
-          error: `Solo quedan ${entrada.maximo} ${entrada.etiqueta} de "${entrada.name}"`,
-        });
-        return;
-      }
-      unidadesPorArticulo.set(codigo, acumulado);
-
       const esServicio = entrada.tipo === OrderItemTipo.SERVICIO;
+      const talla = !esServicio && typeof linea.talla === 'string' ? linea.talla : undefined;
+
+      // Con varias lineas del mismo articulo hay que sumar: tres reservas de
+      // una plaza agotan un servicio de tres plazas igual que una reserva de
+      // tres. En un producto la cuenta va por talla, porque el stock tambien.
+      const clave = identidadLinea(codigo, undefined, talla);
+      const acumulado = (unidadesPorArticulo.get(clave) ?? 0) + quantity;
+
+      if (esServicio) {
+        if (acumulado > entrada.maximo) {
+          res.status(409).json({
+            error: `Solo quedan ${entrada.maximo} ${entrada.etiqueta} de "${entrada.name}"`,
+          });
+          return;
+        }
+      } else {
+        // Quien decide si una talla se puede vender es la capa de servicio de
+        // productos: es la misma regla que aplica el cobro al descontar, y
+        // resolverla dos veces por separado permitiria aceptar un pedido y
+        // luego descontar de otro sitio.
+        const motivo = motivoParaNoVender(
+          { name: entrada.name, tallas: entrada.tallas ?? [] },
+          talla,
+          acumulado,
+        );
+        if (motivo) {
+          // Falta la talla o el producto no la vende: la peticion esta mal
+          // formada. Que no queden unidades es un conflicto de estado.
+          res.status(esTalla(talla) ? 409 : 400).json({ error: motivo });
+          return;
+        }
+      }
+
+      unidadesPorArticulo.set(clave, acumulado);
 
       itemsResueltos.push({
         codigoArticulo: codigo,
@@ -222,6 +259,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
         tipo:           entrada.tipo,
         slotId:         esServicio && typeof linea.slotId === 'string' ? linea.slotId : undefined,
         slotLabel:      esServicio && typeof linea.slotLabel === 'string' ? linea.slotLabel : undefined,
+        talla,
       });
 
       total += entrada.price * quantity;
@@ -474,16 +512,29 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const order = await Order.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true },
-    ).populate('user', 'username email');
+    const order = await Order.findById(id).populate('user', 'username email');
 
     if (!order) {
       res.status(404).json({ error: 'Pedido no encontrado' });
       return;
     }
+
+    // Cancelar un pedido YA COBRADO tiene que devolver el dinero, y hay que
+    // hacerlo antes de cambiar el estado: si el reembolso falla, el pedido se
+    // queda como estaba en vez de figurar cancelado con el importe retenido.
+    const hayQueDevolver = status === OrderStatus.CANCELADO && order.status === OrderStatus.PAGADO;
+    let reembolso: ResultadoReembolso | null = null;
+
+    if (hayQueDevolver) {
+      reembolso = await reembolsarPedido(order);
+      if (!reembolso.ok) {
+        res.status(409).json({ error: `No se pudo reembolsar el pedido: ${reembolso.motivo}` });
+        return;
+      }
+    }
+
+    order.status = status;
+    await order.save();
 
     // Cancelar o rechazar devuelve los horarios al catalogo; cobrar los consolida.
     if (status === OrderStatus.CANCELADO || status === OrderStatus.RECHAZADO) {
@@ -492,7 +543,11 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       await consolidarSlotsDePedido(order._id);
     }
 
-    res.status(200).json({ success: true, data: order });
+    res.status(200).json({
+      success: true,
+      data: order,
+      ...(reembolso?.ok ? { message: `Importe devuelto (${reembolso.reembolsoId})` } : {}),
+    });
   } catch (error) {
     sendServerError(res, 'Error actualizando estado del pedido', error);
   }

@@ -27,19 +27,62 @@ export const PREFIJO_CATEGORIA: Record<Categoria, string> = {
 export const esCategoria = (valor: unknown): valor is Categoria =>
   typeof valor === "string" && Object.values(Categoria).includes(valor as Categoria);
 
+/**
+ * Tallas en las que se vende un producto.
+ *
+ * ⚠️ CONTRATO CON EL FRONTEND: su gemela es `TALLAS` en
+ * `frontend/src/types/producto.types.ts`. El servidor rechaza cualquier valor
+ * que no este aqui, asi que si alli aparece una talla que aqui no existe, el
+ * panel deja elegirla y el guardado falla sin que nada lo advierta antes.
+ */
+export const TALLAS = ['S', 'M', 'L', 'XL', 'XXL'] as const;
+
+export type Talla = (typeof TALLAS)[number];
+
+export const esTalla = (valor: unknown): valor is Talla =>
+  typeof valor === 'string' && (TALLAS as readonly string[]).includes(valor);
+
+/** Existencias de una talla concreta. */
+export interface ITallaStock {
+  talla: Talla;
+  stock: number;
+}
+
 // 2. Interfaz para el producto
 export interface IProduct {
   codigoArticulo: number;
   name: string;
   price: number;
   description: string;
-  stock: number;
+  /**
+   * El stock vive por talla y no en un solo numero.
+   *
+   * Con un contador unico, un producto con existencias de S pero agotado en L
+   * seguia anunciandose disponible para todo el mundo: quien queria una L la
+   * anadia al carrito y solo se enteraba al final, o ni eso.
+   */
+  tallas: ITallaStock[];
+  /** Suma de todas las tallas. Calculado, no almacenado: ver el virtual. */
+  stockTotal?: number;
   category: Categoria;
   subcategoria: string; // Ej: "Rashguards" o "Guantillas" para afinar el filtro
   marca?: string; // Para futuras funcionalidades de marca
   imagenes: string[];
   tags?: string[]; // Para búsquedas cruzadas (ej: ["BJJ", "MMA", "Venum"])
 }
+
+/**
+ * Una entrada por talla. Es un array y no un objeto con cinco claves fijas
+ * porque el calzado usa numeros y no letras: asi cabe otra escala sin volver a
+ * migrar el modelo.
+ */
+const TallaStockSchema = new Schema<ITallaStock>(
+  {
+    talla: { type: String, required: true, enum: TALLAS },
+    stock: { type: Number, required: true, min: 0, default: 0 },
+  },
+  { _id: false },
+);
 
 // 3. Esquema de Mongoose
 const ProductoSchema = new Schema<IProduct>(
@@ -62,9 +105,17 @@ const ProductoSchema = new Schema<IProduct>(
       type: String,
       required: true,
     },
-    stock: {
-      type: Number,
+    tallas: {
+      type: [TallaStockSchema],
       required: true,
+      // Un producto nuevo nace con las cinco tallas a cero: asi el panel las
+      // encuentra siempre y no hay que distinguir «sin talla» de «agotada».
+      default: () => TALLAS.map((talla) => ({ talla, stock: 0 })),
+      validate: {
+        validator: (tallas: ITallaStock[]) =>
+          new Set(tallas.map((t) => t.talla)).size === tallas.length,
+        message: 'Hay tallas repetidas',
+      },
     },
     category: {
       type: String,
@@ -98,16 +149,34 @@ const ProductoSchema = new Schema<IProduct>(
     // entorno, asi que se resuelve aqui, en el borde de salida, en vez de
     // congelarse dentro del dato al subir el fichero.
     toJSON: {
+      // `stockTotal` es un virtual y sin esto no saldria en la respuesta.
+      virtuals: true,
       transform: (_doc: unknown, ret: Record<string, unknown>) => {
         const imagenes = ret['imagenes'];
         if (Array.isArray(imagenes)) {
           ret['imagenes'] = imagenes.map((img) => normalizarUrlMedia(String(img)));
         }
+        // `virtuals: true` arrastra tambien el `id` que Mongoose deriva de
+        // `_id`, y el cliente ya usa `_id`: dos nombres para lo mismo.
+        delete ret['id'];
         return ret;
       },
     },
   },
 );
+
+/**
+ * Cuantas unidades quedan sumando todas las tallas.
+ *
+ * Calculado y no almacenado: un contador aparte habria que mantenerlo a mano
+ * en cada venta y en cada edicion del panel, y basta olvidarlo una vez para
+ * que empiece a mentir. Sirve para lo que no depende de la talla —decir si un
+ * producto esta agotado del todo, ordenar el catalogo— sin que nadie tenga que
+ * sumar por su cuenta.
+ */
+ProductoSchema.virtual('stockTotal').get(function (this: IProduct): number {
+  return (this.tallas ?? []).reduce((total, t) => total + t.stock, 0);
+});
 
 // Índice de texto compuesto para el buscador global de la tienda
 ProductoSchema.index({ name: "text", description: "text", subcategoria: "text", tags: "text" });

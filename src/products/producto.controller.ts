@@ -91,7 +91,7 @@ export const getProductoPorCodigo = async (req: Request, res: Response): Promise
 export const crearProducto = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      codigoArticulo, name, price, description, stock,
+      codigoArticulo, name, price, description, tallas,
       category, subcategoria, marca, imagenes, tags,
     } = req.body;
 
@@ -101,8 +101,20 @@ export const crearProducto = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Sin tallas, el producto nace con las cinco a cero: se da de alta primero
+    // y se rellenan existencias despues, que es como se trabaja en el panel.
+    const tallasNormalizadas = tallas === undefined
+      ? productos.tallasVacias()
+      : productos.normalizarTallas(tallas);
+
+    if (!tallasNormalizadas) {
+      res.status(400).json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
+      return;
+    }
+
     const producto = await productos.crearProducto({
-      codigoArticulo: Number(codigoArticulo), name, price, description, stock,
+      codigoArticulo: Number(codigoArticulo), name, price, description,
+      tallas: tallasNormalizadas,
       category, subcategoria, marca, imagenes, tags,
     });
 
@@ -152,13 +164,17 @@ export const actualizarStock = async (req: Request, res: Response): Promise<void
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    const { stock } = req.body;
-    if (typeof stock !== 'number' || !Number.isInteger(stock) || stock < 0) {
-      res.status(400).json({ error: 'El stock debe ser un entero mayor o igual a 0' });
+    // El cuerpo trae las cinco tallas con su stock. Se manda la tabla entera y
+    // no una talla suelta porque el panel edita la fila completa: asi una
+    // pantalla abierta hace rato no puede pisar el resto de tallas con valores
+    // viejos sin que se note.
+    const tallas = productos.normalizarTallas(req.body.tallas);
+    if (!tallas) {
+      res.status(400).json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
       return;
     }
 
-    const producto = await productos.actualizarStock(codigo, stock);
+    const producto = await productos.actualizarStock(codigo, tallas);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
