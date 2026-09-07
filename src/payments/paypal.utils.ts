@@ -219,6 +219,14 @@ export interface CapturaPayPal {
   completada: boolean;
   /** Id de pedido que viajaba en la orden, para comprobar que se cobro lo que se pidio. */
   pedidoId?: string;
+  /**
+   * Id de la captura, que NO es el de la orden.
+   *
+   * Es lo unico con lo que PayPal admite un reembolso, y solo aparece en la
+   * respuesta de la captura: si no se guarda aqui, mas tarde no hay forma de
+   * devolver el dinero.
+   */
+  capturaId?: string;
 }
 
 /**
@@ -229,16 +237,42 @@ export interface CapturaPayPal {
  */
 export const capturarOrdenPayPal = async (paypalOrderId: string): Promise<CapturaPayPal> => {
   const orden = await llamar<OrdenPayPal & {
-    purchase_units?: Array<{ custom_id?: string; payments?: unknown }>;
+    purchase_units?: Array<{
+      custom_id?: string;
+      payments?: { captures?: Array<{ id?: string }> };
+    }>;
   }>(`/v2/checkout/orders/${paypalOrderId}/capture`, {
     method:  'POST',
     headers: { 'PayPal-Request-Id': `captura-${paypalOrderId}` },
     body:    '{}',
   });
 
+  const unidad = orden.purchase_units?.[0];
+
   return {
     estado:     orden.status,
     completada: orden.status === 'COMPLETED',
-    pedidoId:   orden.purchase_units?.[0]?.custom_id,
+    pedidoId:   unidad?.custom_id,
+    capturaId:  unidad?.payments?.captures?.[0]?.id,
   };
+};
+
+/**
+ * Devuelve el dinero de una captura.
+ *
+ * Sin importe reembolsa el total, que es lo que hace falta al cancelar un
+ * pedido entero. PayPal rechaza reembolsar dos veces la misma captura, asi que
+ * quien llame no tiene que llevar la cuenta.
+ */
+export const reembolsarCapturaPayPal = async (capturaId: string): Promise<string> => {
+  const reembolso = await llamar<{ id: string; status: string }>(
+    `/v2/payments/captures/${capturaId}/refund`,
+    {
+      method:  'POST',
+      headers: { 'PayPal-Request-Id': `reembolso-${capturaId}` },
+      body:    '{}',
+    },
+  );
+
+  return reembolso.id;
 };

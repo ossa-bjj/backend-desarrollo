@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { HydratedDocument, isValidObjectId } from 'mongoose';
 import Stripe from 'stripe';
 import { IOrder, Order, OrderStatus, OrderItemTipo, ESTADOS_NO_PAGABLES } from '../orders/order.model';
-import { ProductoModelo } from '../products/producto.model';
+import { descontarStockDeTalla } from '../products/producto.service';
 import { consolidarSlotsDePedido } from '../availability/disponibilidad.service';
 import { sendServerError, esDuenoOAdmin } from '../shared/controller.utils';
 import { esOrigenPermitido } from '../shared/cors';
@@ -231,19 +231,60 @@ export const iniciarPago = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+/** Linea que se cobro sin que quedaran existencias de su talla. */
+type IncidenciaStock = { codigoArticulo: number; talla?: string; solicitadas: number; detectadaEn: Date };
+
 /**
- * Descuenta del stock las lineas de producto de un pedido cobrado.
+ * Descuenta del stock las lineas de producto de un pedido cobrado y devuelve
+ * las que no se pudieron servir.
  * Los servicios no descuentan stock: su capacidad la controla el slot reservado.
+ *
+ * Se descuenta de LA TALLA que se compro, no de un contador general: es la
+ * misma regla que aplico el alta del pedido al decidir si habia existencias, y
+ * vive en la capa de servicio de productos para que las dos no puedan divergir.
+ *
+ * Lo que no cuadra se devuelve para anotarlo en el pedido, no solo en el log:
+ * el dinero ya esta cobrado y el articulo no existe, asi que alguien tiene que
+ * verlo en el panel y decidir si repone o devuelve el importe.
  */
-const descontarStock = async (items: Array<{ codigoArticulo: number; quantity: number; tipo: string }>): Promise<void> => {
-  await Promise.all(
-    items
-      .filter((item) => item.tipo === OrderItemTipo.PRODUCTO)
-      .map((item) => ProductoModelo.updateOne(
-        { codigoArticulo: item.codigoArticulo },
-        { $inc: { stock: -item.quantity } },
-      )),
+const descontarStock = async (
+  items: Array<{ codigoArticulo: number; quantity: number; tipo: string; talla?: string }>,
+): Promise<IncidenciaStock[]> => {
+  const productos = items.filter((item) => item.tipo === OrderItemTipo.PRODUCTO);
+
+  const resultados = await Promise.all(
+    productos.map(async (item): Promise<IncidenciaStock | null> => {
+      const incidencia = {
+        codigoArticulo: item.codigoArticulo,
+        talla:          item.talla,
+        solicitadas:    item.quantity,
+        detectadaEn:    new Date(),
+      };
+
+      // Sin talla no hay de donde descontar. Es un pedido que no deberia haber
+      // pasado la validacion del alta, y restar a ciegas de una talla
+      // cualquiera solo taparia el fallo.
+      if (!item.talla) {
+        console.warn(`Linea del articulo ${item.codigoArticulo} sin talla: no se descuenta stock`);
+        return incidencia;
+      }
+
+      const producto = await descontarStockDeTalla(item.codigoArticulo, item.talla, item.quantity);
+
+      // No casar el filtro significa que ya no quedaban unidades de esa talla:
+      // otro cobro se llevo las ultimas entre medias.
+      if (!producto) {
+        console.error(
+          `Stock insuficiente al cobrar: articulo ${item.codigoArticulo} talla ${item.talla} x${item.quantity}`,
+        );
+        return incidencia;
+      }
+
+      return null;
+    }),
   );
+
+  return resultados.filter((r): r is IncidenciaStock => r !== null);
 };
 
 /**
@@ -280,7 +321,15 @@ const marcarPagado = async (
 
   // La reserva deja de caducar y el stock baja solo cuando hay dinero de verdad.
   await consolidarSlotsDePedido(order._id);
-  await descontarStock(order.items);
+
+  // Lo que no se pudo servir queda anotado en el pedido, para que el panel lo
+  // enseñe. Se guarda despues de marcar PAGADO a proposito: el cobro es un
+  // hecho aunque el stock no cuadre, y ocultarlo no lo desharia.
+  const incidencias = await descontarStock(order.items);
+  if (incidencias.length > 0) {
+    order.incidenciasStock = incidencias;
+    await order.save();
+  }
 };
 
 /**
@@ -318,8 +367,11 @@ const cerrarPagoDePayPal = async (
     return { ok: false, estado: 409, error: 'El cobro no corresponde a este pedido' };
   }
 
+  // Se guarda el id de la CAPTURA y no el de la orden: es el unico con el que
+  // PayPal admite un reembolso, y solo viene en esta respuesta. Sin el, un
+  // pedido de PayPal no se podria devolver mas tarde.
   await marcarPagado(String(order._id), {
-    referencia: order.pago.paymentIntentId,
+    referencia: captura.capturaId ?? order.pago.paymentIntentId,
     estado:     captura.estado,
     proveedor:  'paypal',
   });
