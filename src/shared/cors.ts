@@ -49,12 +49,7 @@ const casaConPatron = (patron: string, candidato: string): boolean => {
 
 /** Lista efectiva declarada en ALLOWED_ORIGINS, ya normalizada y sin huecos. */
 export const resolverOrigenesPermitidos = (): string[] => [
-  ...new Set(
-    (process.env.ALLOWED_ORIGINS ?? '')
-      .split(',')
-      .map(normalizar)
-      .filter(Boolean),
-  ),
+  ...new Set((process.env.ALLOWED_ORIGINS ?? '').split(',').map(normalizar).filter(Boolean)),
 ];
 
 export const esOrigenPermitido = (
@@ -106,5 +101,9 @@ export const registrarEstadoCors = (): void => {
     return;
   }
 
+  // Traza de arranque: deja escrito con que origenes quedo configurada la
+  // instancia, que es lo primero que se mira cuando el navegador empieza a
+  // rechazar peticiones.
+  // eslint-disable-next-line no-console
   console.log(`CORS activo para: ${permitidos.join(', ')}`);
 };

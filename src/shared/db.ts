@@ -19,8 +19,12 @@ const connectDB = async (): Promise<typeof mongoose> => {
 
   if (!connectionPromise) {
     const url = resolveDbUrl();
-    connectionPromise = mongoose.connect(url)
+    connectionPromise = mongoose
+      .connect(url)
       .then((conn) => {
+        // Traza de arranque: marca que la conexion perezosa se resolvio en
+        // esta invocacion serverless.
+        // eslint-disable-next-line no-console
         console.log('MongoDB connected');
         return conn;
       })

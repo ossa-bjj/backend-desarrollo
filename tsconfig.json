@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "index.ts", "seed.ts", "api"],
+  "include": ["src", "index.ts", "api"],
   "exclude": ["node_modules", "dist"]
 }

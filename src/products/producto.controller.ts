@@ -1,24 +1,21 @@
-import { Request, Response } from 'express';
-import { ProductoModelo } from './producto.model';
+import type { Request, Response } from 'express';
+import { PREFIJO_CATEGORIA, esCategoria } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
-import { sendServerError } from '../shared/controller.utils';
+import * as productos from './producto.service';
+import { sendServerError, esDuplicado } from '../shared/controller.utils';
 import { uploadToR2, deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 
 // Express 5 tipa los parametros de ruta como string | string[].
-// Los codigos 60XX pertenecen a los servicios, que viven en otra coleccion.
 const parseCodigo = (valor: string | string[]): number | null => {
   if (Array.isArray(valor)) return null;
 
   const codigo = Number(valor);
-  if (!Number.isInteger(codigo) || codigo <= 0) return null;
-  if (codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX) return null;
-
-  return codigo;
+  return productos.esCodigoDeProducto(codigo) ? codigo : null;
 };
 
 const codigoInvalido = (res: Response): void => {
   res.status(400).json({
-    error: `Codigo de articulo no valido: debe ser un entero positivo fuera del rango ${CODIGO_SERVICIO_MIN}-${CODIGO_SERVICIO_MAX}, reservado a los servicios`,
+    error: `Código de artículo no válido: debe ser un entero positivo fuera del rango ${CODIGO_SERVICIO_MIN}-${CODIGO_SERVICIO_MAX}, reservado a los servicios`,
   });
 };
 
@@ -26,68 +23,52 @@ const noEncontrado = (res: Response): void => {
   res.status(404).json({ error: 'Producto no encontrado' });
 };
 
-// Mongoose lanza code 11000 al violar el indice unico de codigoArticulo.
-const esDuplicado = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
-
-// --- GET /api/productos (publico) ---
-export const getProductos = async (_req: Request, res: Response): Promise<void> => {
+// --- GET /api/productos?categoria=&codigo=&nombre=&marca=&q=&destacado=&pagina=&limite= (publico) ---
+export const getProductos = async (req: Request, res: Response): Promise<void> => {
   try {
-    const productos = await ProductoModelo.find();
-    res.status(200).json({ success: true, data: productos });
+    const lectura = productos.leerCriteriosProducto(req.query);
+    if (!lectura.ok) {
+      res.status(400).json({ error: lectura.error });
+      return;
+    }
+
+    const {
+      productos: encontrados,
+      total,
+      pagina,
+      limite,
+    } = await productos.listarProductos(lectura.criterios);
+
+    res.status(200).json({
+      success: true,
+      data: encontrados,
+      meta: { total, pagina, limite },
+    });
   } catch (error) {
     sendServerError(res, 'Error obteniendo productos', error);
   }
 };
 
-// --- GET /api/productos/search?q= (publico) ---
-export const buscarProductos = async (req: Request, res: Response): Promise<void> => {
+// --- GET /api/productos/siguiente-codigo?categoria= (admin) ---
+export const getSiguienteCodigo = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { q } = req.query;
-    if (typeof q !== 'string' || q.trim() === '') {
-      res.status(400).json({ error: 'Parametro de busqueda requerido' });
+    const { categoria } = req.query;
+    if (!esCategoria(categoria)) {
+      res.status(400).json({ error: 'Se requiere una categoría válida' });
       return;
     }
 
-    const productos = await ProductoModelo
-      .find({ $text: { $search: q } }, { score: { $meta: 'textScore' } })
-      .sort({ score: { $meta: 'textScore' } });
+    const codigo = await productos.siguienteCodigoLibre(categoria);
+    if (codigo === null) {
+      res.status(409).json({
+        error: `La serie de códigos ${PREFIJO_CATEGORIA[categoria]}XX de ${categoria} está agotada`,
+      });
+      return;
+    }
 
-    res.status(200).json({ success: true, data: productos });
+    res.status(200).json({ success: true, data: { codigo } });
   } catch (error) {
-    sendServerError(res, 'Error buscando productos', error);
-  }
-};
-
-// --- GET /api/productos/destacados (publico) ---
-export const getProductosDestacados = async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const productos = await ProductoModelo.find({ tags: 'destacado' });
-    res.status(200).json({ success: true, data: productos });
-  } catch (error) {
-    sendServerError(res, 'Error obteniendo productos destacados', error);
-  }
-};
-
-// --- GET /api/productos/categoria/:categoria (publico) ---
-export const getProductosPorCategoria = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { categoria } = req.params;
-    const productos = await ProductoModelo.find({ category: categoria });
-    res.status(200).json({ success: true, data: productos });
-  } catch (error) {
-    sendServerError(res, 'Error obteniendo productos por categoria', error);
-  }
-};
-
-// --- GET /api/productos/marca/:marca (publico) ---
-export const getProductosPorMarca = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { marca } = req.params;
-    const productos = await ProductoModelo.find({ marca: new RegExp(String(marca), 'i') });
-    res.status(200).json({ success: true, data: productos });
-  } catch (error) {
-    sendServerError(res, 'Error obteniendo productos por marca', error);
+    sendServerError(res, 'Error calculando el siguiente codigo libre', error);
   }
 };
 
@@ -97,7 +78,7 @@ export const getProductoPorCodigo = async (req: Request, res: Response): Promise
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    const producto = await ProductoModelo.findOne({ codigoArticulo: codigo });
+    const producto = await productos.buscarPorCodigo(codigo);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
@@ -110,19 +91,53 @@ export const getProductoPorCodigo = async (req: Request, res: Response): Promise
 export const crearProducto = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      codigoArticulo, name, price, description, stock,
-      category, subcategoria, marca, imagenes, tags,
+      codigoArticulo,
+      name,
+      price,
+      description,
+      tallas,
+      category,
+      subcategoria,
+      marca,
+      imagenes,
+      tags,
     } = req.body;
 
-    const producto = await new ProductoModelo({
-      codigoArticulo, name, price, description, stock,
-      category, subcategoria, marca, imagenes, tags,
-    }).save();
+    const invalido = productos.validarCodigoYCategoria(codigoArticulo, category);
+    if (invalido) {
+      res.status(400).json({ error: invalido });
+      return;
+    }
+
+    // Sin tallas, el producto nace con las cinco a cero: se da de alta primero
+    // y se rellenan existencias despues, que es como se trabaja en el panel.
+    const tallasNormalizadas =
+      tallas === undefined ? productos.tallasVacias() : productos.normalizarTallas(tallas);
+
+    if (!tallasNormalizadas) {
+      res
+        .status(400)
+        .json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
+      return;
+    }
+
+    const producto = await productos.crearProducto({
+      codigoArticulo: Number(codigoArticulo),
+      name,
+      price,
+      description,
+      tallas: tallasNormalizadas,
+      category,
+      subcategoria,
+      marca,
+      imagenes,
+      tags,
+    });
 
     res.status(201).json({ success: true, message: 'Producto creado correctamente', data: producto });
   } catch (error) {
     if (esDuplicado(error)) {
-      res.status(409).json({ error: 'Ya existe un producto con ese codigo de articulo' });
+      res.status(409).json({ error: 'Ya existe un producto con ese código de artículo' });
       return;
     }
     sendServerError(res, 'Error creando producto', error);
@@ -135,14 +150,22 @@ export const actualizarProducto = async (req: Request, res: Response): Promise<v
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    // El codigo identifica al producto: no se reasigna desde el body.
-    const { codigoArticulo: _ignorado, ...cambios } = req.body;
+    // Solo los campos conocidos: el codigo identifica al producto y no se
+    // reasigna, y el cuerpo en crudo permitiria colar operadores de Mongo.
+    const cambios = productos.soloCamposActualizables(req.body);
 
-    const producto = await ProductoModelo.findOneAndUpdate(
-      { codigoArticulo: codigo },
-      cambios,
-      { new: true, runValidators: true },
-    );
+    // Como el codigo no se puede reasignar, cambiar de categoria dejaria al
+    // producto con un codigo que contradice su categoria. Antes esto pasaba en
+    // silencio y rompia el listado por prefijo; ahora se dice en voz alta.
+    if (cambios.category !== undefined) {
+      const invalido = productos.validarCodigoYCategoria(codigo, cambios.category);
+      if (invalido) {
+        res.status(400).json({ error: invalido });
+        return;
+      }
+    }
+
+    const producto = await productos.actualizarProducto(codigo, cambios);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
@@ -157,17 +180,19 @@ export const actualizarStock = async (req: Request, res: Response): Promise<void
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    const { stock } = req.body;
-    if (typeof stock !== 'number' || !Number.isInteger(stock) || stock < 0) {
-      res.status(400).json({ error: 'El stock debe ser un entero mayor o igual a 0' });
+    // El cuerpo trae las cinco tallas con su stock. Se manda la tabla entera y
+    // no una talla suelta porque el panel edita la fila completa: asi una
+    // pantalla abierta hace rato no puede pisar el resto de tallas con valores
+    // viejos sin que se note.
+    const tallas = productos.normalizarTallas(req.body.tallas);
+    if (!tallas) {
+      res
+        .status(400)
+        .json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
       return;
     }
 
-    const producto = await ProductoModelo.findOneAndUpdate(
-      { codigoArticulo: codigo },
-      { stock },
-      { new: true, runValidators: true },
-    );
+    const producto = await productos.actualizarStock(codigo, tallas);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
@@ -184,21 +209,18 @@ export const anadirImagenes = async (req: Request, res: Response): Promise<void>
 
     const files = (req.files ?? []) as Express.Multer.File[];
     if (files.length === 0) {
-      res.status(400).json({ error: 'No se enviaron imagenes' });
+      res.status(400).json({ error: 'No se enviaron imágenes' });
       return;
     }
 
     // Solo se sube a R2 despues de saber que el producto existe: evita dejar
     // objetos huerfanos en el bucket por un codigo equivocado.
-    const producto = await ProductoModelo.findOne({ codigoArticulo: codigo });
+    if (!(await productos.existePorCodigo(codigo))) return noEncontrado(res);
+
+    const urls = await Promise.all(files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)));
+
+    const producto = await productos.anadirImagenes(codigo, urls);
     if (!producto) return noEncontrado(res);
-
-    const urls = await Promise.all(
-      files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)),
-    );
-
-    producto.imagenes.push(...urls);
-    await producto.save();
 
     res.status(200).json({ success: true, data: producto });
   } catch (error) {
@@ -220,17 +242,17 @@ export const eliminarImagen = async (req: Request, res: Response): Promise<void>
 
     // Se quita primero la referencia y solo despues se borra el objeto: si la
     // imagen no pertenece a este producto, el bucket no se toca.
-    const producto = await ProductoModelo.findOneAndUpdate(
-      { codigoArticulo: codigo, imagenes: url },
-      { $pull: { imagenes: url } },
-      { new: true },
-    );
+    const producto = await productos.quitarImagen(codigo, url);
     if (!producto) {
       res.status(404).json({ error: 'El producto no existe o no tiene esa imagen' });
       return;
     }
 
-    try { await deleteFromR2(keyFromPublicUrl(url)); } catch { /* el objeto ya no estaba en R2 */ }
+    try {
+      await deleteFromR2(keyFromPublicUrl(url));
+    } catch {
+      /* el objeto ya no estaba en R2 */
+    }
 
     res.status(200).json({ success: true, data: producto });
   } catch (error) {
@@ -244,7 +266,7 @@ export const eliminarProducto = async (req: Request, res: Response): Promise<voi
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    const producto = await ProductoModelo.findOneAndDelete({ codigoArticulo: codigo });
+    const producto = await productos.eliminarProducto(codigo);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, message: 'Producto eliminado' });
