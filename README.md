@@ -30,15 +30,15 @@ Vive en Vercel. Los datos, en MongoDB. Las fotos y archivos, en Cloudflare R2.
 
 ## 🧩 Qué sabe hacer
 
-|     | Módulo             | De qué se ocupa                                    |
-| :-: | ------------------ | -------------------------------------------------- |
-| 👤  | **Usuarios**       | Registro, login y permisos                         |
-| 🛍️  | **Productos**      | El catálogo de la tienda                           |
-| 📦  | **Pedidos**        | La compra, el cobro y su estado                    |
-| 🥋  | **Servicios**      | Clases, sesiones y seminarios                      |
-| 📅  | **Disponibilidad** | Qué huecos quedan libres para reservar             |
-| 📰  | **Noticias**       | Las publicaciones del club                         |
-| 🖼️  | **Media**          | Sirve las imágenes guardadas en la nube            |
+|     | Módulo             | De qué se ocupa                         |
+| :-: | ------------------ | --------------------------------------- |
+| 👤  | **Usuarios**       | Registro, login y permisos              |
+| 🛍️  | **Productos**      | El catálogo de la tienda                |
+| 📦  | **Pedidos**        | La compra, el cobro y su estado         |
+| 🥋  | **Servicios**      | Clases, sesiones y seminarios           |
+| 📅  | **Disponibilidad** | Qué huecos quedan libres para reservar  |
+| 📰  | **Noticias**       | Las publicaciones del club              |
+| 🖼️  | **Media**          | Sirve las imágenes guardadas en la nube |
 
 Todo cuelga de `/api`. Por ejemplo: `/api/productos`, `/api/pedidos`.
 
@@ -81,16 +81,16 @@ RESEND_API_KEY=<api-key>
 CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 ```
 
-| Variable          | Para qué sirve                                          |
-| ----------------- | ------------------------------------------------------- |
-| `DB_URL`          | Dónde está la base de datos                             |
-| `JWT_SECRET`      | Firma las sesiones de quien inicia sesión               |
-| `R2_*`            | La nube donde viven las imágenes                        |
-| `ALLOWED_ORIGINS` | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín) |
-| `STRIPE_*`        | Cobrar con tarjeta y con Bizum                          |
-| `PAYPAL_*`        | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox. `PAYPAL_WEBHOOK_ID` verifica la firma de sus avisos: sin él el webhook se rechaza entero |
-| `RESEND_API_KEY`  | Enviar el correo de recuperación de contraseña          |
-| `CORREO_REMITENTE`| Remitente de ese correo, con el dominio verificado en Resend |
+| Variable           | Para qué sirve                                                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DB_URL`           | Dónde está la base de datos                                                                                                                                                             |
+| `JWT_SECRET`       | Firma las sesiones de quien inicia sesión                                                                                                                                               |
+| `R2_*`             | La nube donde viven las imágenes                                                                                                                                                        |
+| `ALLOWED_ORIGINS`  | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín)                                                                                                        |
+| `STRIPE_*`         | Cobrar con tarjeta y con Bizum                                                                                                                                                          |
+| `PAYPAL_*`         | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox. `PAYPAL_WEBHOOK_ID` verifica la firma de sus avisos: sin él el webhook se rechaza entero |
+| `RESEND_API_KEY`   | Enviar el correo de recuperación de contraseña                                                                                                                                          |
+| `CORREO_REMITENTE` | Remitente de ese correo, con el dominio verificado en Resend                                                                                                                            |
 
 > [!NOTE]
 > Las de Stripe, PayPal y correo **no se comprueban al arrancar**: el servidor funciona
@@ -100,7 +100,7 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 
 > [!IMPORTANT]
 > **Bizum se cobra a través de Stripe**, no es una pasarela aparte y no tiene variables
-> propias. Hay que activarlo en el panel de Stripe (*Configuración › Métodos de pago*).
+> propias. Hay que activarlo en el panel de Stripe (_Configuración › Métodos de pago_).
 > Solo admite euros y cuentas españolas.
 
 > [!WARNING]

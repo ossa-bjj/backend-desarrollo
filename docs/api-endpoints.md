@@ -14,38 +14,38 @@ Un cuerpo mal formado o demasiado grande no llega a ningún controlador: lo rech
 
 ## Estado y medios
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Público | Estado de la API y de la conexión a MongoDB. |
-| GET | `/media/*key` | Público | Recupera un archivo almacenado en Cloudflare R2. |
+| Método | Ruta          | Acceso  | Descripción                                      |
+| ------ | ------------- | ------- | ------------------------------------------------ |
+| GET    | `/`           | Público | Estado de la API y de la conexión a MongoDB.     |
+| GET    | `/media/*key` | Público | Recupera un archivo almacenado en Cloudflare R2. |
 
 ## Usuarios (`/users`)
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| POST | `/register` | Público | Registra un usuario. Además de `username`, `email` y `password` exige **`profile`**, con el nombre y los apellidos dentro; sin él responde `400 Datos no validos: profile`. |
-| POST | `/login` | Público | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada. |
-| POST | `/forgot-password` | Público | Inicia la recuperación de contraseña. Envía al correo un enlace a `<origen>/recuperar?token=`, válido una hora; el origen sale de la cabecera `Origin` validada contra `ALLOWED_ORIGINS`. Responde siempre lo mismo exista o no el correo, para no convertirse en un censo de usuarios. Sin `RESEND_API_KEY` el correo no sale y queda avisado en el log. |
-| POST | `/reset-password` | Público | Restablece una contraseña con el flujo de recuperación. |
-| GET | `/me` | Autenticado | Devuelve el usuario de la sesión. |
-| POST | `/` | Admin | Crea un usuario. |
-| GET | `/` | Admin | Lista personas. Filtros combinables: `?q=` (usuario, email, nombre o apellido), `?username=`, `?email=`, `?role=`, `?status=`, `?customer=true\|false`, `?license=`. Sin filtros devuelve la primera página de todas. Orden: `?orden=` (`nombre`, `username`, `email`, `role`, `status`, `cliente`, `licencia`, `alta`) y `?direccion=asc\|desc`; por defecto `nombre` ascendente. `role` y `status` fuera de su enumeración devuelven `400`; una columna de orden desconocida cae al orden por defecto. |
-| GET | `/:id` | Admin | Obtiene un usuario por identificador. |
-| PUT | `/:id` | Autenticado | Actualiza un usuario. |
-| PATCH | `/:id/password` | Autenticado | Cambia la contraseña. |
-| PATCH | `/:id/status` | Admin | Cambia el estado del usuario. |
-| PATCH | `/:id/customer` | Admin | Actualiza datos de cliente. |
-| PATCH | `/:id/sports-profile` | Admin | Actualiza el perfil deportivo. |
-| DELETE | `/:id/sports-profile` | Admin | Elimina el perfil deportivo. |
-| PATCH | `/:id/membership` | Admin | Actualiza la membresía. |
-| POST | `/:id/addresses` | Autenticado | Añade una dirección. |
-| PATCH | `/:id/addresses/:addressId` | Autenticado | Actualiza una dirección. |
-| DELETE | `/:id/addresses/:addressId` | Autenticado | Elimina una dirección. |
-| GET | `/:id/membership-payments` | Admin | Lista pagos de membresía. |
-| POST | `/:id/membership-payments` | Admin | Registra un pago de membresía. |
-| PATCH | `/:id/membership-payments/:paymentId` | Admin | Actualiza un pago de membresía. |
-| DELETE | `/:id/membership-payments/:paymentId` | Admin | Elimina un pago de membresía. |
-| DELETE | `/:id` | Admin | Elimina un usuario. |
+| Método | Ruta                                  | Acceso      | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------ | ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/register`                           | Público     | Registra un usuario. Además de `username`, `email` y `password` exige **`profile`**, con el nombre y los apellidos dentro; sin él responde `400 Datos no validos: profile`.                                                                                                                                                                                                                                                                                                                              |
+| POST   | `/login`                              | Público     | Inicia sesión y obtiene token. Devuelve `403` si la cuenta está bloqueada y `429` con `Retry-After` tras 5 intentos fallidos. El freno cuenta dos claves a la vez, usuario e IP, y se guarda en Mongo con caducidad automática: en serverless un contador en memoria no cuenta nada.                                                                                                                                                                                                                     |
+| POST   | `/forgot-password`                    | Público     | Inicia la recuperación de contraseña. Envía al correo un enlace a `<origen>/recuperar?token=`, válido una hora; el origen sale de la cabecera `Origin` validada contra `ALLOWED_ORIGINS`. Responde siempre lo mismo exista o no el correo, para no convertirse en un censo de usuarios. Sin `RESEND_API_KEY` el correo no sale y queda avisado en el log.                                                                                                                                                |
+| POST   | `/reset-password`                     | Público     | Restablece una contraseña con el flujo de recuperación.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| GET    | `/me`                                 | Autenticado | Devuelve el usuario de la sesión.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| POST   | `/`                                   | Admin       | Crea un usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| GET    | `/`                                   | Admin       | Lista personas. Filtros combinables: `?q=` (usuario, email, nombre o apellido), `?username=`, `?email=`, `?role=`, `?status=`, `?customer=true\|false`, `?license=`. Sin filtros devuelve la primera página de todas. Orden: `?orden=` (`nombre`, `username`, `email`, `role`, `status`, `cliente`, `licencia`, `alta`) y `?direccion=asc\|desc`; por defecto `nombre` ascendente. `role` y `status` fuera de su enumeración devuelven `400`; una columna de orden desconocida cae al orden por defecto. |
+| GET    | `/:id`                                | Admin       | Obtiene un usuario por identificador.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PUT    | `/:id`                                | Autenticado | Actualiza un usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PATCH  | `/:id/password`                       | Autenticado | Cambia la contraseña.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PATCH  | `/:id/status`                         | Admin       | Cambia el estado del usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| PATCH  | `/:id/customer`                       | Admin       | Actualiza datos de cliente.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| PATCH  | `/:id/sports-profile`                 | Admin       | Actualiza el perfil deportivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| DELETE | `/:id/sports-profile`                 | Admin       | Elimina el perfil deportivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| PATCH  | `/:id/membership`                     | Admin       | Actualiza la membresía.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| POST   | `/:id/addresses`                      | Autenticado | Añade una dirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| PATCH  | `/:id/addresses/:addressId`           | Autenticado | Actualiza una dirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| DELETE | `/:id/addresses/:addressId`           | Autenticado | Elimina una dirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| GET    | `/:id/membership-payments`            | Admin       | Lista pagos de membresía.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| POST   | `/:id/membership-payments`            | Admin       | Registra un pago de membresía.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| PATCH  | `/:id/membership-payments/:paymentId` | Admin       | Actualiza un pago de membresía.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| DELETE | `/:id/membership-payments/:paymentId` | Admin       | Elimina un pago de membresía.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| DELETE | `/:id`                                | Admin       | Elimina un usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Productos (`/productos`)
 
@@ -54,29 +54,29 @@ entrenamiento, `20` protecciones, `30` ropa de calle, `40` accesorios, `50` calz
 `6000`–`6999` pertenece a los servicios. El servidor hace cumplir la correspondencia entre
 código y categoría al crear y al actualizar.
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Público | Lista productos. Filtros combinables: `?categoria=`, `?codigo=` (fragmento, 1 a 4 dígitos), `?nombre=`, `?marca=`, `?q=` (texto completo), `?destacado=true\|false`. Sin filtros devuelve la primera página del catálogo. Una categoría o un código no válidos devuelven `400`. |
-| GET | `/siguiente-codigo` | Admin | `?categoria=`. Primer código libre de la serie. `409` si los cien códigos de la categoría están ocupados. |
-| GET | `/:codigoArticulo` | Público | Obtiene un producto por código de artículo. |
-| POST | `/` | Admin | Crea un producto. `400` si el código no cuadra con el prefijo de su categoría. |
-| PUT | `/:codigoArticulo` | Admin | Actualiza un producto. El código no se reasigna, así que cambiar `category` a una que no case con el código devuelve `400`. |
-| PATCH | `/:codigoArticulo/stock` | Admin | Actualiza el stock. |
-| POST | `/:codigoArticulo/imagenes` | Admin | Sube hasta diez archivos en el campo multipart `imagenes`. |
-| DELETE | `/:codigoArticulo/imagenes` | Admin | Elimina una imagen del producto. |
-| DELETE | `/:codigoArticulo` | Admin | Elimina un producto. |
+| Método | Ruta                        | Acceso  | Descripción                                                                                                                                                                                                                                                                     |
+| ------ | --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/`                         | Público | Lista productos. Filtros combinables: `?categoria=`, `?codigo=` (fragmento, 1 a 4 dígitos), `?nombre=`, `?marca=`, `?q=` (texto completo), `?destacado=true\|false`. Sin filtros devuelve la primera página del catálogo. Una categoría o un código no válidos devuelven `400`. |
+| GET    | `/siguiente-codigo`         | Admin   | `?categoria=`. Primer código libre de la serie. `409` si los cien códigos de la categoría están ocupados.                                                                                                                                                                       |
+| GET    | `/:codigoArticulo`          | Público | Obtiene un producto por código de artículo.                                                                                                                                                                                                                                     |
+| POST   | `/`                         | Admin   | Crea un producto. `400` si el código no cuadra con el prefijo de su categoría.                                                                                                                                                                                                  |
+| PUT    | `/:codigoArticulo`          | Admin   | Actualiza un producto. El código no se reasigna, así que cambiar `category` a una que no case con el código devuelve `400`.                                                                                                                                                     |
+| PATCH  | `/:codigoArticulo/stock`    | Admin   | Actualiza el stock.                                                                                                                                                                                                                                                             |
+| POST   | `/:codigoArticulo/imagenes` | Admin   | Sube hasta diez archivos en el campo multipart `imagenes`.                                                                                                                                                                                                                      |
+| DELETE | `/:codigoArticulo/imagenes` | Admin   | Elimina una imagen del producto.                                                                                                                                                                                                                                                |
+| DELETE | `/:codigoArticulo`          | Admin   | Elimina un producto.                                                                                                                                                                                                                                                            |
 
 ## Pedidos (`/pedidos`)
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Autenticado | Lista pedidos, más recientes primero. Filtros: `?status=`, `?desde=`/`?hasta=` (`YYYY-MM-DD`, ambos inclusive) y, **solo para un admin**, `?usuario=`. A quien no es admin el servidor le impone su propia identidad como dueño, así que `?usuario=` no sirve para leer pedidos ajenos. Paginado (50 por defecto, 200 máximo). |
-| POST | `/` | Autenticado | Crea un pedido. El cuerpo solo lleva `items: [{ codigoArticulo, quantity, slotId?, slotLabel? }]` y `shippingAddress?`: nombre, precio y total se resuelven en el servidor contra el catálogo. |
-| GET | `/:id` | Autenticado | Obtiene un pedido por identificador. |
-| PATCH | `/:id/confirmar` | Admin | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. **O se aplica entera o no se aplica nada**: valida todos los ajustes antes de escribir, y si un cambio de horario falla a mitad (`409`, otro cliente se quedó el hueco) devuelve los ya movidos a su sitio. |
-| PATCH | `/:id/rechazar` | Admin | Rechaza un pedido pendiente de confirmación. Cuerpo: `motivo`. Libera los horarios retenidos. |
-| PATCH | `/:id/status` | Admin | Cambia el estado de un pedido. |
-| DELETE | `/:id` | Admin | Elimina un pedido y libera sus horarios. |
+| Método | Ruta             | Acceso      | Descripción                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------ | ---------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/`              | Autenticado | Lista pedidos, más recientes primero. Filtros: `?status=`, `?desde=`/`?hasta=` (`YYYY-MM-DD`, ambos inclusive) y, **solo para un admin**, `?usuario=`. A quien no es admin el servidor le impone su propia identidad como dueño, así que `?usuario=` no sirve para leer pedidos ajenos. Paginado (50 por defecto, 200 máximo).                                                                              |
+| POST   | `/`              | Autenticado | Crea un pedido. El cuerpo solo lleva `items: [{ codigoArticulo, quantity, slotId?, slotLabel? }]` y `shippingAddress?`: nombre, precio y total se resuelven en el servidor contra el catálogo.                                                                                                                                                                                                              |
+| GET    | `/:id`           | Autenticado | Obtiene un pedido por identificador.                                                                                                                                                                                                                                                                                                                                                                        |
+| PATCH  | `/:id/confirmar` | Admin       | Cierra el presupuesto. Cuerpo: `ajustes: [{ codigoArticulo, slotOriginalId?, price?, quantity?, motivoAjuste?, slotId?, slotLabel? }]`. Recalcula y congela el total, y deja el pedido pagable. **O se aplica entera o no se aplica nada**: valida todos los ajustes antes de escribir, y si un cambio de horario falla a mitad (`409`, otro cliente se quedó el hueco) devuelve los ya movidos a su sitio. |
+| PATCH  | `/:id/rechazar`  | Admin       | Rechaza un pedido pendiente de confirmación. Cuerpo: `motivo`. Libera los horarios retenidos.                                                                                                                                                                                                                                                                                                               |
+| PATCH  | `/:id/status`    | Admin       | Cambia el estado de un pedido.                                                                                                                                                                                                                                                                                                                                                                              |
+| DELETE | `/:id`           | Admin       | Elimina un pedido y libera sus horarios.                                                                                                                                                                                                                                                                                                                                                                    |
 
 ### Estados de un pedido
 
@@ -102,12 +102,12 @@ Tres métodos, dos caminos. `stripe` (tarjeta) y `bizum` se cobran con Stripe y 
 su webhook; `paypal` se cobra fuera del sitio y lo cierra la captura. Bizum no es una
 pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| POST | `/:id/pago/iniciar` | Autenticado | Arranca el cobro sobre el total confirmado. Cuerpo: `metodo` (`stripe` · `bizum` · `paypal`) y `returnUrl` (obligatoria en `paypal`). Con Stripe y Bizum crea o reutiliza el PaymentIntent y devuelve `{ proveedor, clientSecret, orderId }`; con PayPal crea la orden y devuelve `{ proveedor, approveUrl, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
-| POST | `/:id/pago/capturar` | Autenticado | Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo. Devuelve el pedido. `409` si el pedido no tiene un pago de PayPal pendiente o si PayPal no completó el cobro. Sobre un pedido ya pagado responde `200` sin volver a cobrar. |
-| POST | `/webhook` | Público | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token. |
-| POST | `/webhook/paypal` | Público | Recibe los eventos de PayPal, suscrito a `CHECKOUT.ORDER.APPROVED`. Cierra el pago del cliente que aprueba y **no vuelve al sitio**. |
+| Método | Ruta                 | Acceso      | Descripción                                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/:id/pago/iniciar`  | Autenticado | Arranca el cobro sobre el total confirmado. Cuerpo: `metodo` (`stripe` · `bizum` · `paypal`) y `returnUrl` (obligatoria en `paypal`). Con Stripe y Bizum crea o reutiliza el PaymentIntent y devuelve `{ proveedor, clientSecret, orderId }`; con PayPal crea la orden y devuelve `{ proveedor, approveUrl, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
+| POST   | `/:id/pago/capturar` | Autenticado | Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo. Devuelve el pedido. `409` si el pedido no tiene un pago de PayPal pendiente o si PayPal no completó el cobro. Sobre un pedido ya pagado responde `200` sin volver a cobrar.                                                                                                                                    |
+| POST   | `/webhook`           | Público     | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token.                                                                                                                                                                                                                                                                                           |
+| POST   | `/webhook/paypal`    | Público     | Recibe los eventos de PayPal, suscrito a `CHECKOUT.ORDER.APPROVED`. Cierra el pago del cliente que aprueba y **no vuelve al sitio**.                                                                                                                                                                                                                                           |
 
 **`returnUrl` se valida contra `ALLOWED_ORIGINS`**, la misma lista que gobierna CORS: la
 manda el navegador, y sin esa comprobación el endpoint serviría para mandar a un cliente a
@@ -141,18 +141,18 @@ Los dos webhooks se autentican distinto, y por eso quieren el cuerpo distinto:
 Los servicios comparten el espacio de `codigoArticulo` con los productos, en el rango
 `6000`–`6999`.
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Público | Lista los servicios activos, ordenados por `orden` y código. |
-| GET | `/search` | Público | Busca servicios activos por texto (`?q=`). |
-| GET | `/admin/all` | Admin | Lista todos los servicios, incluidos los desactivados. |
-| GET | `/:codigoArticulo` | Público | Obtiene un servicio por código. |
-| POST | `/` | Admin | Crea un servicio. |
-| PUT | `/:codigoArticulo` | Admin | Actualiza un servicio. El código no se reasigna. |
-| PATCH | `/:codigoArticulo/activo` | Admin | Fija `activo`, o lo alterna si no se envía. |
-| POST | `/:codigoArticulo/imagenes` | Admin | Sube hasta diez archivos en el campo multipart `imagenes`. |
-| DELETE | `/:codigoArticulo/imagenes` | Admin | Elimina una imagen. Cuerpo: `url`. |
-| DELETE | `/:codigoArticulo` | Admin | Elimina el servicio y sus imágenes de R2. |
+| Método | Ruta                        | Acceso  | Descripción                                                  |
+| ------ | --------------------------- | ------- | ------------------------------------------------------------ |
+| GET    | `/`                         | Público | Lista los servicios activos, ordenados por `orden` y código. |
+| GET    | `/search`                   | Público | Busca servicios activos por texto (`?q=`).                   |
+| GET    | `/admin/all`                | Admin   | Lista todos los servicios, incluidos los desactivados.       |
+| GET    | `/:codigoArticulo`          | Público | Obtiene un servicio por código.                              |
+| POST   | `/`                         | Admin   | Crea un servicio.                                            |
+| PUT    | `/:codigoArticulo`          | Admin   | Actualiza un servicio. El código no se reasigna.             |
+| PATCH  | `/:codigoArticulo/activo`   | Admin   | Fija `activo`, o lo alterna si no se envía.                  |
+| POST   | `/:codigoArticulo/imagenes` | Admin   | Sube hasta diez archivos en el campo multipart `imagenes`.   |
+| DELETE | `/:codigoArticulo/imagenes` | Admin   | Elimina una imagen. Cuerpo: `url`.                           |
+| DELETE | `/:codigoArticulo`          | Admin   | Elimina el servicio y sus imágenes de R2.                    |
 
 Campos propios: `modalidad` (`presencial` · `online` · `mixta`), `duracion` en minutos,
 `plazas` por sesión, `requiereReserva` y `requiereConfirmacion`.
@@ -166,24 +166,24 @@ Cada cambio deja una entrada en `historial` con la acción, el autor y una foto 
 título, el contenido y el estado en ese momento. Es un registro de auditoría: se
 añade, nunca se edita.
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Público | Lista las noticias publicadas, más recientes primero. Filtros: `?categoria=` y `?q=`. |
-| GET | `/admin/all` | Admin | Lista todas las noticias, borradores incluidos. |
-| POST | `/` | Admin | Crea una noticia como borrador. |
-| PUT | `/:id` | Admin | Actualiza una noticia. Solo cambia los campos enviados. |
-| PATCH | `/:id/publicar` | Admin | Alterna entre publicada y borrador. |
-| DELETE | `/:id` | Admin | Elimina la noticia, su historial y su portada del bucket. |
+| Método | Ruta            | Acceso  | Descripción                                                                           |
+| ------ | --------------- | ------- | ------------------------------------------------------------------------------------- |
+| GET    | `/`             | Público | Lista las noticias publicadas, más recientes primero. Filtros: `?categoria=` y `?q=`. |
+| GET    | `/admin/all`    | Admin   | Lista todas las noticias, borradores incluidos.                                       |
+| POST   | `/`             | Admin   | Crea una noticia como borrador.                                                       |
+| PUT    | `/:id`          | Admin   | Actualiza una noticia. Solo cambia los campos enviados.                               |
+| PATCH  | `/:id/publicar` | Admin   | Alterna entre publicada y borrador.                                                   |
+| DELETE | `/:id`          | Admin   | Elimina la noticia, su historial y su portada del bucket.                             |
 
 ### Cómo se ilustra una noticia
 
 El campo del formulario es siempre `imagenPortada`, pero el servidor mira lo que llega y lo
 reparte entre dos campos **excluyentes**:
 
-| Lo que se envía en `imagenPortada` | Qué se guarda |
-| --- | --- |
-| El código de inserción de una publicación de Instagram, o su enlace (`/p/…` o `/reel/…`) | El permalink normalizado en `instagramPost`, y `imagenPortada` vacío |
-| Una referencia que ya está en el bucket | Su key en `imagenPortada` |
+| Lo que se envía en `imagenPortada`                                                                    | Qué se guarda                                                        |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| El código de inserción de una publicación de Instagram, o su enlace (`/p/…` o `/reel/…`)              | El permalink normalizado en `instagramPost`, y `imagenPortada` vacío |
+| Una referencia que ya está en el bucket                                                               | Su key en `imagenPortada`                                            |
 | Cualquier otro enlace a una imagen, o a la **página** que la contiene, de la que se lee su `og:image` | La imagen **descargada y copiada a R2**, y su key en `imagenPortada` |
 
 Una noticia se ilustra con una publicación insertada o con una imagen propia, nunca con las
@@ -212,14 +212,14 @@ horas y son hora local de la academia, nunca un instante absoluto.
 
 ## Disponibilidad (`/disponibilidad`)
 
-| Método | Ruta | Acceso | Descripción |
-| --- | --- | --- | --- |
-| GET | `/` | Público | `?servicio=&desde=&hasta=` en formato `YYYY-MM-DD`. Sin token devuelve solo los huecos reservables de hoy en adelante; con `?admin=true` y token de admin devuelve también ocupados, bloqueados y fechas pasadas. |
-| POST | `/` | Admin | Crea un hueco suelto. |
-| POST | `/batch` | Admin | Genera la parrilla. Cuerpo: `servicio`, `desde`, `hasta`, `horaInicio`, `horaFin`, `duracion?`, `diasSemana` (0 = lunes … 6 = domingo), `nota?`. Devuelve `{ creados, omitidos }`. |
-| PATCH | `/:id/bloquear` | Admin | Bloquea un hueco. No se puede bloquear uno ya reservado. |
-| PATCH | `/:id/desbloquear` | Admin | Devuelve un hueco bloqueado al catálogo. |
-| DELETE | `/:id` | Admin | Elimina un hueco. No se puede eliminar uno ya reservado. |
+| Método | Ruta               | Acceso  | Descripción                                                                                                                                                                                                       |
+| ------ | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/`                | Público | `?servicio=&desde=&hasta=` en formato `YYYY-MM-DD`. Sin token devuelve solo los huecos reservables de hoy en adelante; con `?admin=true` y token de admin devuelve también ocupados, bloqueados y fechas pasadas. |
+| POST   | `/`                | Admin   | Crea un hueco suelto.                                                                                                                                                                                             |
+| POST   | `/batch`           | Admin   | Genera la parrilla. Cuerpo: `servicio`, `desde`, `hasta`, `horaInicio`, `horaFin`, `duracion?`, `diasSemana` (0 = lunes … 6 = domingo), `nota?`. Devuelve `{ creados, omitidos }`.                                |
+| PATCH  | `/:id/bloquear`    | Admin   | Bloquea un hueco. No se puede bloquear uno ya reservado.                                                                                                                                                          |
+| PATCH  | `/:id/desbloquear` | Admin   | Devuelve un hueco bloqueado al catálogo.                                                                                                                                                                          |
+| DELETE | `/:id`             | Admin   | Elimina un hueco. No se puede eliminar uno ya reservado.                                                                                                                                                          |
 
 La generación por lotes es idempotente: un índice único por servicio, día y hora de inicio
 hace que los huecos existentes se cuenten como omitidos en vez de duplicarse.
