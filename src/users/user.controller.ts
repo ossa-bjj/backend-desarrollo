@@ -1,9 +1,9 @@
-import { Request, Response } from 'express';
-import { isValidObjectId } from 'mongoose';
+import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { IUser, User, UserRole, UserStatus } from './user.model';
+import type { IUser } from './user.model';
+import { User, UserRole, UserStatus } from './user.model';
 import { leerCriteriosUsuario, listarUsuarios } from './user.service';
-import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
+import { sendServerError, esAdmin, esDuenoOAdmin, leerObjectId } from '../shared/controller.utils';
 
 // POST /api/users
 export const createUser = async (req: Request, res: Response): Promise<void> => {
@@ -80,10 +80,7 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     const user = await User.findById(id).select('-password');
     if (!user) {
@@ -114,10 +111,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       metadata,
     } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (!esDuenoOAdmin(req, id)) {
       res.status(403).json({ error: 'No tienes permisos para actualizar este usuario' });
@@ -167,10 +161,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (username || email) {
       const existingUser = await User.exists({
         _id: { $ne: id },
-        $or: [
-          ...(username ? [{ username }] : []),
-          ...(email ? [{ email }] : []),
-        ],
+        $or: [...(username ? [{ username }] : []), ...(email ? [{ email }] : [])],
       });
 
       if (existingUser) {
@@ -179,11 +170,9 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      update,
-      { new: true, runValidators: true }
-    ).select('-password');
+    const user = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true }).select(
+      '-password',
+    );
 
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
@@ -201,10 +190,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     const user = await User.findByIdAndDelete(id);
     if (!user) {
@@ -224,10 +210,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
     const { id } = req.params;
     const { currentPassword, newPassword } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (!esDuenoOAdmin(req, id)) {
       res.status(403).json({ error: 'No tienes permisos para cambiar esta contraseña' });
@@ -273,21 +256,16 @@ export const updateStatus = async (req: Request, res: Response): Promise<void> =
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (!Object.values(UserStatus).includes(status)) {
       res.status(400).json({ error: 'Estado no válido' });
       return;
     }
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true }
-    ).select('-password');
+    const user = await User.findByIdAndUpdate(id, { status }, { new: true, runValidators: true }).select(
+      '-password',
+    );
 
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });

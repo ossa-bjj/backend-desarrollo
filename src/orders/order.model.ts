@@ -1,4 +1,5 @@
-import { Schema, model, Types } from 'mongoose';
+import type { Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 export enum OrderStatus {
   // El pedido lleva algun servicio que un admin debe revisar y tarificar
@@ -97,21 +98,21 @@ export interface IOrder {
 const OrderItemSchema = new Schema<IOrderItem>(
   {
     codigoArticulo: { type: Number, required: true },
-    name:           { type: String, required: true, trim: true },
-    quantity:       { type: Number, required: true, min: 1 },
-    price:          { type: Number, required: true, min: 0 },
-    image:          { type: String, trim: true },
+    name: { type: String, required: true, trim: true },
+    quantity: { type: Number, required: true, min: 1 },
+    price: { type: Number, required: true, min: 0 },
+    image: { type: String, trim: true },
     tipo: {
-      type:     String,
-      enum:     Object.values(OrderItemTipo),
+      type: String,
+      enum: Object.values(OrderItemTipo),
       required: true,
-      default:  OrderItemTipo.PRODUCTO,
+      default: OrderItemTipo.PRODUCTO,
     },
     precioOriginal: { type: Number, required: true, min: 0 },
-    motivoAjuste:   { type: String, trim: true },
-    slotId:    { type: String, trim: true },
+    motivoAjuste: { type: String, trim: true },
+    slotId: { type: String, trim: true },
     slotLabel: { type: String, trim: true },
-    talla:     { type: String, trim: true },
+    talla: { type: String, trim: true },
   },
   { _id: false },
 );
@@ -119,58 +120,58 @@ const OrderItemSchema = new Schema<IOrderItem>(
 const OrderSchema = new Schema<IOrder>(
   {
     user: {
-      type:     Schema.Types.ObjectId,
-      ref:      'User',
+      type: Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
-      index:    true,
+      index: true,
     },
     items: {
-      type:     [OrderItemSchema],
+      type: [OrderItemSchema],
       required: true,
       validate: {
         validator: (items: IOrderItem[]) => items.length > 0,
-        message:   'El pedido debe tener al menos un producto',
+        message: 'El pedido debe tener al menos un producto',
       },
     },
-    total:  { type: Number, required: true, min: 0 },
+    total: { type: Number, required: true, min: 0 },
     status: {
-      type:    String,
-      enum:    Object.values(OrderStatus),
+      type: String,
+      enum: Object.values(OrderStatus),
       default: OrderStatus.PENDIENTE,
-      index:   true,
+      index: true,
     },
     shippingAddress: {
-      calle:        { type: String, trim: true },
-      ciudad:       { type: String, trim: true },
-      provincia:    { type: String, trim: true },
+      calle: { type: String, trim: true },
+      ciudad: { type: String, trim: true },
+      provincia: { type: String, trim: true },
       codigoPostal: { type: String, trim: true },
-      pais:         { type: String, trim: true },
+      pais: { type: String, trim: true },
     },
     // Rastro del cobro. `paymentIntentId` permite reutilizar el intento si el
     // cliente vuelve a la pantalla de pago sin haber terminado.
     pago: {
-      proveedor:       { type: String, trim: true },
+      proveedor: { type: String, trim: true },
       paymentIntentId: { type: String, trim: true, index: true },
-      estado:          { type: String, trim: true },
-      pagadoEn:        { type: Date },
-      reembolsoId:     { type: String, trim: true },
-      reembolsadoEn:   { type: Date },
+      estado: { type: String, trim: true },
+      pagadoEn: { type: Date },
+      reembolsoId: { type: String, trim: true },
+      reembolsadoEn: { type: Date },
     },
     incidenciasStock: {
       type: [
         new Schema(
           {
             codigoArticulo: { type: Number, required: true },
-            talla:          { type: String, trim: true },
-            solicitadas:    { type: Number, required: true },
-            detectadaEn:    { type: Date, required: true, default: Date.now },
+            talla: { type: String, trim: true },
+            solicitadas: { type: Number, required: true },
+            detectadaEn: { type: Date, required: true, default: Date.now },
           },
           { _id: false },
         ),
       ],
       default: [],
     },
-    confirmadoEn:  { type: Date },
+    confirmadoEn: { type: Date },
     confirmadoPor: { type: Schema.Types.ObjectId, ref: 'User' },
     motivoRechazo: { type: String, trim: true },
   },
@@ -194,6 +195,12 @@ export const Order = model<IOrder>('Order', OrderSchema);
  * del presupuesto tienen que generar exactamente la misma identidad para la
  * misma linea; si divergen, los ajustes del admin dejan de encontrar su linea
  * en silencio, sin error, sin aplicarse.
+ *
+ * CONTRATO CON EL FRONTEND. El cliente tiene su gemela en
+ * `frontend/src/utils/identidadLinea.ts`, y las dos deben producir exactamente
+ * la misma cadena para la misma linea. No se puede compartir el codigo: son dos
+ * runtimes distintos. Si cambia el formato, cambia en los dos repositorios a la
+ * vez. (El aviso ya estaba escrito en el lado del cliente y faltaba en este.)
  */
 export const identidadLinea = (codigoArticulo: number, slotId?: string, talla?: string): string =>
   `${codigoArticulo}#${slotId ?? ''}#${talla ?? ''}`;

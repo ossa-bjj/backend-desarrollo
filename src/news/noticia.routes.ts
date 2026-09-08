@@ -14,14 +14,14 @@ const router = Router();
 
 // --- RUTAS PUBLICAS ---
 // Las rutas literales van antes que /:id para que no las capture.
-router.get('/',              getNoticias);
-router.get('/admin/all',     isAuth, isAdmin, getNoticiasAdmin);
-router.get('/:id',           getNoticia);
+router.get('/', getNoticias);
+router.get('/admin/all', isAuth, isAdmin, getNoticiasAdmin);
+router.get('/:id', getNoticia);
 
 // --- RUTAS PROTEGIDAS ---
-router.post('/',                  isAuth, isAdmin, crearNoticia);
-router.put('/:id',                isAuth, isAdmin, actualizarNoticia);
-router.patch('/:id/publicar',     isAuth, isAdmin, alternarPublicacionNoticia);
-router.delete('/:id',             isAuth, isAdmin, eliminarNoticia);
+router.post('/', isAuth, isAdmin, crearNoticia);
+router.put('/:id', isAuth, isAdmin, actualizarNoticia);
+router.patch('/:id/publicar', isAuth, isAdmin, alternarPublicacionNoticia);
+router.delete('/:id', isAuth, isAdmin, eliminarNoticia);
 
 export default router;

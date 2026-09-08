@@ -1,5 +1,6 @@
-import { HydratedDocument } from 'mongoose';
-import { IOrder, OrderItemTipo, OrderStatus } from '../orders/order.model';
+import type { HydratedDocument } from 'mongoose';
+import type { IOrder } from '../orders/order.model';
+import { OrderItemTipo, OrderStatus } from '../orders/order.model';
 import { devolverStockDeTalla } from '../products/producto.service';
 import { getStripe } from './stripe.utils';
 import { reembolsarCapturaPayPal } from './paypal.utils';
@@ -16,9 +17,7 @@ import { reembolsarCapturaPayPal } from './paypal.utils';
 
 type Pedido = HydratedDocument<IOrder>;
 
-export type ResultadoReembolso =
-  | { ok: true; reembolsoId: string }
-  | { ok: false; motivo: string };
+export type ResultadoReembolso = { ok: true; reembolsoId: string } | { ok: false; motivo: string };
 
 /** Un pedido solo se devuelve si se llego a cobrar y no se devolvio ya. */
 export const sePuedeReembolsar = (order: Pedido): string | null => {
@@ -35,9 +34,7 @@ export const sePuedeReembolsar = (order: Pedido): string | null => {
  * nunca llego a restar nada, y devolverla inventaria existencias que no hubo.
  */
 const devolverStock = async (order: Pedido): Promise<void> => {
-  const falladas = new Set(
-    (order.incidenciasStock ?? []).map((i) => `${i.codigoArticulo}#${i.talla ?? ''}`),
-  );
+  const falladas = new Set((order.incidenciasStock ?? []).map((i) => `${i.codigoArticulo}#${i.talla ?? ''}`));
 
   await Promise.all(
     order.items
@@ -63,9 +60,10 @@ export const reembolsarPedido = async (order: Pedido): Promise<ResultadoReembols
   try {
     // Bizum entra por Stripe, asi que se devuelve por Stripe: lo que decide es
     // la pasarela por la que paso el dinero, no el boton que pulso el cliente.
-    const reembolsoId = order.pago?.proveedor === 'paypal'
-      ? await reembolsarCapturaPayPal(referencia)
-      : (await getStripe().refunds.create({ payment_intent: referencia })).id;
+    const reembolsoId =
+      order.pago?.proveedor === 'paypal'
+        ? await reembolsarCapturaPayPal(referencia)
+        : (await getStripe().refunds.create({ payment_intent: referencia })).id;
 
     order.pago = { ...order.pago!, reembolsoId, reembolsadoEn: new Date() };
     await devolverStock(order);

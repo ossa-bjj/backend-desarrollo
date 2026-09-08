@@ -1,12 +1,12 @@
-import { Schema, model } from "mongoose";
+import { Schema, model } from 'mongoose';
 import { normalizarUrlMedia } from '../shared/r2.utils';
 
 export enum Categoria {
-  PROTECCIONES = "PROTECCIONES", // Guantes, guantillas, bucales, espinilleras
-  ROPA_ENTRENAMIENTO = "ROPA_ENTRENAMIENTO", // Rashguards, mallas, shorts
-  ROPA_CALLE = "ROPA_CALLE", // Sudaderas, camisetas, chándal
-  CALZADO = "CALZADO", // Botas de boxeo, zapatillas de lucha, sandalias
-  ACCESORIOS = "ACCESORIOS" // Mochilas, cinturones, gorras, complementos
+  PROTECCIONES = 'PROTECCIONES', // Guantes, guantillas, bucales, espinilleras
+  ROPA_ENTRENAMIENTO = 'ROPA_ENTRENAMIENTO', // Rashguards, mallas, shorts
+  ROPA_CALLE = 'ROPA_CALLE', // Sudaderas, camisetas, chándal
+  CALZADO = 'CALZADO', // Botas de boxeo, zapatillas de lucha, sandalias
+  ACCESORIOS = 'ACCESORIOS', // Mochilas, cinturones, gorras, complementos
 }
 
 /**
@@ -17,15 +17,15 @@ export enum Categoria {
  * antes de enviar; quien la hace cumplir es el servidor.
  */
 export const PREFIJO_CATEGORIA: Record<Categoria, string> = {
-  [Categoria.ROPA_ENTRENAMIENTO]: "10",
-  [Categoria.PROTECCIONES]:       "20",
-  [Categoria.ROPA_CALLE]:         "30",
-  [Categoria.ACCESORIOS]:         "40",
-  [Categoria.CALZADO]:            "50",
+  [Categoria.ROPA_ENTRENAMIENTO]: '10',
+  [Categoria.PROTECCIONES]: '20',
+  [Categoria.ROPA_CALLE]: '30',
+  [Categoria.ACCESORIOS]: '40',
+  [Categoria.CALZADO]: '50',
 };
 
 export const esCategoria = (valor: unknown): valor is Categoria =>
-  typeof valor === "string" && Object.values(Categoria).includes(valor as Categoria);
+  typeof valor === 'string' && Object.values(Categoria).includes(valor as Categoria);
 
 /**
  * Tallas en las que se vende un producto.
@@ -112,25 +112,24 @@ const ProductoSchema = new Schema<IProduct>(
       // encuentra siempre y no hay que distinguir «sin talla» de «agotada».
       default: () => TALLAS.map((talla) => ({ talla, stock: 0 })),
       validate: {
-        validator: (tallas: ITallaStock[]) =>
-          new Set(tallas.map((t) => t.talla)).size === tallas.length,
+        validator: (tallas: ITallaStock[]) => new Set(tallas.map((t) => t.talla)).size === tallas.length,
         message: 'Hay tallas repetidas',
       },
     },
     category: {
       type: String,
       required: true,
-      enum: Object.values(Categoria), 
-      index: true 
+      enum: Object.values(Categoria),
+      index: true,
     },
     subcategoria: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
     marca: {
       type: String,
-      trim: true
+      trim: true,
     },
     imagenes: {
       type: [String],
@@ -139,8 +138,8 @@ const ProductoSchema = new Schema<IProduct>(
     },
     tags: {
       type: [String],
-      default: []
-    }
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -179,6 +178,6 @@ ProductoSchema.virtual('stockTotal').get(function (this: IProduct): number {
 });
 
 // Índice de texto compuesto para el buscador global de la tienda
-ProductoSchema.index({ name: "text", description: "text", subcategoria: "text", tags: "text" });
+ProductoSchema.index({ name: 'text', description: 'text', subcategoria: 'text', tags: 'text' });
 
-export const ProductoModelo = model<IProduct>("Producto", ProductoSchema);
+export const ProductoModelo = model<IProduct>('Producto', ProductoSchema);

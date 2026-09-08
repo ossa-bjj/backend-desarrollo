@@ -55,9 +55,9 @@ app.use(async (_req, res, next) => {
 });
 
 // --- RUTAS ---
-app.use('/api/users',    userRouter);
+app.use('/api/users', userRouter);
 app.use('/api/productos', productoRouter);
-app.use('/api/pedidos',  orderRouter);
+app.use('/api/pedidos', orderRouter);
 app.use('/api/servicios', servicioRouter);
 app.use('/api/disponibilidad', disponibilidadRouter);
 app.use('/api/noticias', noticiaRouter);
@@ -130,6 +130,9 @@ if (require.main === module) {
   connectDB()
     .then(() => {
       app.listen(PORT, () => {
+        // Traza de arranque: confirma que el proceso quedo escuchando. No es
+        // depuracion, por eso se queda.
+        // eslint-disable-next-line no-console
         console.log(`Servidor levantado en http://localhost:${PORT}`);
       });
     })

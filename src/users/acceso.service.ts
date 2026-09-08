@@ -28,8 +28,7 @@ export const claveIp = (ip: string): string => `ip:${ip}`;
 export const bloqueadoHasta = async (claves: string[]): Promise<Date | null> => {
   const ahora = new Date();
 
-  const bloqueo = await IntentoAcceso
-    .findOne({ clave: { $in: claves }, bloqueadoHasta: { $gt: ahora } })
+  const bloqueo = await IntentoAcceso.findOne({ clave: { $in: claves }, bloqueadoHasta: { $gt: ahora } })
     .sort({ bloqueadoHasta: -1 })
     .select('bloqueadoHasta');
 

@@ -10,6 +10,8 @@
  * dice exactamente que variable falta.
  */
 
+import { comoDecimalDeTexto } from '../shared/dinero';
+
 const SANDBOX = 'https://api-m.sandbox.paypal.com';
 const PRODUCCION = 'https://api-m.paypal.com';
 
@@ -54,7 +56,7 @@ const obtenerAccessToken = async (): Promise<string> => {
   const respuesta = await fetch(`${base}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
-      Authorization:  `Basic ${credencial}`,
+      Authorization: `Basic ${credencial}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: 'grant_type=client_credentials',
@@ -66,7 +68,7 @@ const obtenerAccessToken = async (): Promise<string> => {
 
   const datos = (await respuesta.json()) as { access_token: string; expires_in: number };
   tokenCacheado = {
-    valor:    datos.access_token,
+    valor: datos.access_token,
     expiraEn: Date.now() + (datos.expires_in - 60) * 1000,
   };
 
@@ -80,7 +82,7 @@ const llamar = async <T>(ruta: string, init: RequestInit): Promise<T> => {
   const respuesta = await fetch(`${base}${ruta}`, {
     ...init,
     headers: {
-      Authorization:  `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...init.headers,
     },
@@ -129,19 +131,19 @@ export const crearOrdenPayPal = async (
       purchase_units: [
         {
           reference_id: pedidoId,
-          custom_id:    pedidoId,
+          custom_id: pedidoId,
           amount: {
             currency_code: MONEDA_PAYPAL,
             // PayPal quiere el importe como cadena con dos decimales.
-            value: total.toFixed(2),
+            value: comoDecimalDeTexto(total),
           },
         },
       ],
       payment_source: {
         paypal: {
           experience_context: {
-            return_url:  returnUrl,
-            cancel_url:  cancelUrl,
+            return_url: returnUrl,
+            cancel_url: cancelUrl,
             user_action: 'PAY_NOW',
             // Sin esto PayPal pide direccion de envio otra vez, que ya tenemos.
             shipping_preference: 'NO_SHIPPING',
@@ -188,13 +190,13 @@ export const firmaDeWebhookEsValida = async (
   };
 
   const cuerpo = {
-    auth_algo:         leer('paypal-auth-algo'),
-    cert_url:          leer('paypal-cert-url'),
-    transmission_id:   leer('paypal-transmission-id'),
-    transmission_sig:  leer('paypal-transmission-sig'),
+    auth_algo: leer('paypal-auth-algo'),
+    cert_url: leer('paypal-cert-url'),
+    transmission_id: leer('paypal-transmission-id'),
+    transmission_sig: leer('paypal-transmission-sig'),
     transmission_time: leer('paypal-transmission-time'),
-    webhook_id:        webhookId,
-    webhook_event:     evento,
+    webhook_id: webhookId,
+    webhook_event: evento,
   };
 
   if (Object.entries(cuerpo).some(([clave, valor]) => clave !== 'webhook_event' && !valor)) {
@@ -236,24 +238,26 @@ export interface CapturaPayPal {
  * retorno, PayPal devuelve la captura que ya hizo en vez de cobrar dos veces.
  */
 export const capturarOrdenPayPal = async (paypalOrderId: string): Promise<CapturaPayPal> => {
-  const orden = await llamar<OrdenPayPal & {
-    purchase_units?: Array<{
-      custom_id?: string;
-      payments?: { captures?: Array<{ id?: string }> };
-    }>;
-  }>(`/v2/checkout/orders/${paypalOrderId}/capture`, {
-    method:  'POST',
+  const orden = await llamar<
+    OrdenPayPal & {
+      purchase_units?: Array<{
+        custom_id?: string;
+        payments?: { captures?: Array<{ id?: string }> };
+      }>;
+    }
+  >(`/v2/checkout/orders/${paypalOrderId}/capture`, {
+    method: 'POST',
     headers: { 'PayPal-Request-Id': `captura-${paypalOrderId}` },
-    body:    '{}',
+    body: '{}',
   });
 
   const unidad = orden.purchase_units?.[0];
 
   return {
-    estado:     orden.status,
+    estado: orden.status,
     completada: orden.status === 'COMPLETED',
-    pedidoId:   unidad?.custom_id,
-    capturaId:  unidad?.payments?.captures?.[0]?.id,
+    pedidoId: unidad?.custom_id,
+    capturaId: unidad?.payments?.captures?.[0]?.id,
   };
 };
 
@@ -268,9 +272,9 @@ export const reembolsarCapturaPayPal = async (capturaId: string): Promise<string
   const reembolso = await llamar<{ id: string; status: string }>(
     `/v2/payments/captures/${capturaId}/refund`,
     {
-      method:  'POST',
+      method: 'POST',
       headers: { 'PayPal-Request-Id': `reembolso-${capturaId}` },
-      body:    '{}',
+      body: '{}',
     },
   );
 

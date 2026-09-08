@@ -1,21 +1,8 @@
-import { FilterQuery, HydratedDocument } from 'mongoose';
-import {
-  Categoria,
-  IProduct,
-  ITallaStock,
-  PREFIJO_CATEGORIA,
-  ProductoModelo,
-  TALLAS,
-  esCategoria,
-  esTalla,
-} from './producto.model';
+import type { FilterQuery, HydratedDocument } from 'mongoose';
+import type { IProduct, ITallaStock } from './producto.model';
+import { Categoria, PREFIJO_CATEGORIA, ProductoModelo, TALLAS, esCategoria, esTalla } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
-import {
-  booleanoDeQuery,
-  leerPaginacion,
-  regexContiene,
-  textoDeQuery,
-} from '../shared/consulta.utils';
+import { booleanoDeQuery, leerPaginacion, regexContiene, textoDeQuery } from '../shared/consulta.utils';
 import { soloCampos } from '../shared/actualizacion.utils';
 
 /**
@@ -56,12 +43,9 @@ export interface ListadoProductos {
 }
 
 /** Criterios validados, o el mensaje que el controlador devolvera como 400. */
-export type LecturaCriterios =
-  | { ok: true; criterios: CriteriosProducto }
-  | { ok: false; error: string };
+export type LecturaCriterios = { ok: true; criterios: CriteriosProducto } | { ok: false; error: string };
 
 const categoriasAdmitidas = (): string => Object.values(Categoria).join(', ');
-
 
 // --- Reglas del codigo de articulo ---
 
@@ -70,9 +54,7 @@ const categoriasAdmitidas = (): string => Object.values(Categoria).join(', ');
  * que comparten con los productos el mismo espacio de codigos.
  */
 export const esCodigoDeProducto = (codigo: number): boolean =>
-  Number.isInteger(codigo) &&
-  codigo > 0 &&
-  !(codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX);
+  Number.isInteger(codigo) && codigo > 0 && !(codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX);
 
 /**
  * Comprueba a la vez el codigo y su coherencia con la categoria. Es regla de
@@ -112,8 +94,7 @@ export const siguienteCodigoLibre = async (categoria: Categoria): Promise<number
   const primero = Number(`${PREFIJO_CATEGORIA[categoria]}00`);
   const ultimo = primero + CODIGOS_POR_CATEGORIA - 1;
 
-  const ocupadoMasAlto = await ProductoModelo
-    .findOne({ codigoArticulo: { $gte: primero, $lte: ultimo } })
+  const ocupadoMasAlto = await ProductoModelo.findOne({ codigoArticulo: { $gte: primero, $lte: ultimo } })
     .sort({ codigoArticulo: -1 })
     .select('codigoArticulo');
 
@@ -121,13 +102,12 @@ export const siguienteCodigoLibre = async (categoria: Categoria): Promise<number
   return siguiente > ultimo ? null : siguiente;
 };
 
-
 // --- Listado ---
 
 export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCriterios => {
   const categoria = textoDeQuery(query.categoria);
   if (categoria !== undefined && !esCategoria(categoria)) {
-    return { ok: false, error: `Categoria no valida. Valores admitidos: ${categoriasAdmitidas()}` };
+    return { ok: false, error: `Categoría no válida. Valores admitidos: ${categoriasAdmitidas()}` };
   }
 
   // El panel busca por fragmento de codigo ("10" -> 1001, 1002...). Aceptar
@@ -135,7 +115,7 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
   // delicada; limitarlo a digitos deja la intencion clara y la consulta simple.
   const codigo = textoDeQuery(query.codigo);
   if (codigo !== undefined && !new RegExp(`^\\d{1,${LONGITUD_CODIGO}}$`).test(codigo)) {
-    return { ok: false, error: `El filtro de codigo admite entre 1 y ${LONGITUD_CODIGO} digitos` };
+    return { ok: false, error: `El filtro de código admite entre 1 y ${LONGITUD_CODIGO} dígitos` };
   }
 
   const { pagina, limite } = leerPaginacion(query, LIMITE_POR_DEFECTO, LIMITE_MAXIMO);
@@ -145,9 +125,9 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
     criterios: {
       categoria,
       codigo,
-      nombre:    textoDeQuery(query.nombre),
-      marca:     textoDeQuery(query.marca),
-      texto:     textoDeQuery(query.q),
+      nombre: textoDeQuery(query.nombre),
+      marca: textoDeQuery(query.marca),
+      texto: textoDeQuery(query.q),
       destacado: booleanoDeQuery(query.destacado),
       pagina,
       limite,
@@ -159,9 +139,9 @@ const construirFiltro = (criterios: CriteriosProducto): FilterQuery<IProduct> =>
   const filtro: FilterQuery<IProduct> = {};
 
   if (criterios.categoria) filtro.category = criterios.categoria;
-  if (criterios.nombre)    filtro.name     = regexContiene(criterios.nombre);
-  if (criterios.marca)     filtro.marca    = regexContiene(criterios.marca);
-  if (criterios.texto)     filtro.$text    = { $search: criterios.texto };
+  if (criterios.nombre) filtro.name = regexContiene(criterios.nombre);
+  if (criterios.marca) filtro.marca = regexContiene(criterios.marca);
+  if (criterios.texto) filtro.$text = { $search: criterios.texto };
 
   if (criterios.destacado !== undefined) {
     filtro.tags = criterios.destacado ? TAG_DESTACADO : { $ne: TAG_DESTACADO };
@@ -186,9 +166,7 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
 
   // Con busqueda de texto manda la relevancia; sin ella, el orden del catalogo.
   const consulta = criterios.texto
-    ? ProductoModelo
-        .find(filtro, { score: { $meta: 'textScore' } })
-        .sort({ score: { $meta: 'textScore' } })
+    ? ProductoModelo.find(filtro, { score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' } })
     : ProductoModelo.find(filtro).sort(ORDEN_LISTADO);
 
   // El total se cuenta con el mismo filtro que la pagina: sin el, el cliente no
@@ -200,7 +178,6 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
 
   return { productos, total, pagina: criterios.pagina, limite: criterios.limite };
 };
-
 
 // --- Tallas y existencias ---
 
@@ -309,39 +286,35 @@ export const devolverStockDeTalla = (codigo: number, talla: string, cantidad: nu
  * producto y no se reasigna.
  */
 const CAMPOS_ACTUALIZABLES = [
-  'name', 'price', 'description', 'tallas',
-  'category', 'subcategoria', 'marca', 'imagenes', 'tags',
+  'name',
+  'price',
+  'description',
+  'tallas',
+  'category',
+  'subcategoria',
+  'marca',
+  'imagenes',
+  'tags',
 ] as const;
 
 /** Deja pasar solo los campos conocidos. Ver `shared/actualizacion.utils.ts`. */
 export const soloCamposActualizables = (cuerpo: unknown): Partial<IProduct> =>
   soloCampos<IProduct>(cuerpo, CAMPOS_ACTUALIZABLES);
 
-
 // --- Documento suelto ---
 
-export const buscarPorCodigo = (codigo: number) =>
-  ProductoModelo.findOne({ codigoArticulo: codigo });
+export const buscarPorCodigo = (codigo: number) => ProductoModelo.findOne({ codigoArticulo: codigo });
 
 export const existePorCodigo = async (codigo: number): Promise<boolean> =>
   (await ProductoModelo.exists({ codigoArticulo: codigo })) !== null;
 
-export const crearProducto = (datos: Partial<IProduct>) =>
-  new ProductoModelo(datos).save();
+export const crearProducto = (datos: Partial<IProduct>) => new ProductoModelo(datos).save();
 
 export const actualizarProducto = (codigo: number, cambios: Partial<IProduct>) =>
-  ProductoModelo.findOneAndUpdate(
-    { codigoArticulo: codigo },
-    cambios,
-    { new: true, runValidators: true },
-  );
+  ProductoModelo.findOneAndUpdate({ codigoArticulo: codigo }, cambios, { new: true, runValidators: true });
 
 export const actualizarStock = (codigo: number, tallas: ITallaStock[]) =>
-  ProductoModelo.findOneAndUpdate(
-    { codigoArticulo: codigo },
-    { tallas },
-    { new: true, runValidators: true },
-  );
+  ProductoModelo.findOneAndUpdate({ codigoArticulo: codigo }, { tallas }, { new: true, runValidators: true });
 
 export const anadirImagenes = (codigo: number, urls: string[]) =>
   ProductoModelo.findOneAndUpdate(

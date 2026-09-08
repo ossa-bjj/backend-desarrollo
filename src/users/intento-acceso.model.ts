@@ -21,10 +21,10 @@ export interface IIntentoAcceso {
 
 const IntentoAccesoSchema = new Schema<IIntentoAcceso>(
   {
-    clave:          { type: String, required: true, unique: true },
-    intentos:       { type: Number, required: true, default: 0 },
+    clave: { type: String, required: true, unique: true },
+    intentos: { type: Number, required: true, default: 0 },
     bloqueadoHasta: { type: Date },
-    expiraEn:       { type: Date, required: true },
+    expiraEn: { type: Date, required: true },
   },
   { versionKey: false },
 );

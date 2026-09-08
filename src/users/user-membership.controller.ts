@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { MembershipPaymentStatus, MembershipStatus, User } from './user.model';
-import { sendServerError } from '../shared/controller.utils';
+import { sendServerError, leerObjectId } from '../shared/controller.utils';
 
 // PATCH /api/users/:id/membership
 export const updateMembership = async (req: Request, res: Response): Promise<void> => {
@@ -9,10 +9,7 @@ export const updateMembership = async (req: Request, res: Response): Promise<voi
     const { id } = req.params;
     const { status, monthlyFee, currency, startDate, nextDueDate } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (status && !Object.values(MembershipStatus).includes(status)) {
       res.status(400).json({ error: 'Estado de cuota no válido' });
@@ -34,7 +31,7 @@ export const updateMembership = async (req: Request, res: Response): Promise<voi
     const user = await User.findByIdAndUpdate(
       id,
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -53,10 +50,7 @@ export const getMembershipPayments = async (req: Request, res: Response): Promis
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     const user = await User.findById(id).select('membershipPayments');
     if (!user) {
@@ -76,10 +70,7 @@ export const addMembershipPayment = async (req: Request, res: Response): Promise
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (status && !Object.values(MembershipPaymentStatus).includes(status)) {
       res.status(400).json({ error: 'Estado de pago no válido' });
@@ -89,7 +80,7 @@ export const addMembershipPayment = async (req: Request, res: Response): Promise
     const user = await User.findByIdAndUpdate(
       id,
       { $push: { membershipPayments: req.body } },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -137,7 +128,7 @@ export const updateMembershipPayment = async (req: Request, res: Response): Prom
     const user = await User.findOneAndUpdate(
       { _id: id, 'membershipPayments._id': paymentId },
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -164,7 +155,7 @@ export const removeMembershipPayment = async (req: Request, res: Response): Prom
     const user = await User.findByIdAndUpdate(
       id,
       { $pull: { membershipPayments: { _id: paymentId } } },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
