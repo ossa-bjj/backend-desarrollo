@@ -20,12 +20,10 @@ export const textoDeQuery = (valor: unknown): string | undefined => {
  * ha escrito un usuario. Sin escapar, un `(a+)+$` cuelga el proceso (ReDoS) y
  * un `.` suelto amplia la busqueda en silencio.
  */
-export const escaparRegex = (texto: string): string =>
-  texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const escaparRegex = (texto: string): string => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Coincidencia por subcadena, sin distinguir mayusculas ni acentos de teclado. */
-export const regexContiene = (texto: string): RegExp =>
-  new RegExp(escaparRegex(texto), 'i');
+export const regexContiene = (texto: string): RegExp => new RegExp(escaparRegex(texto), 'i');
 
 /** Solo `true` y `false` explicitos filtran; cualquier otra cosa es "sin filtrar". */
 export const booleanoDeQuery = (valor: unknown): boolean | undefined => {
@@ -57,9 +55,6 @@ export const leerPaginacion = (
 
   return {
     pagina: Number.isInteger(pagina) && pagina > 0 ? pagina : 1,
-    limite:
-      Number.isInteger(limite) && limite > 0
-        ? Math.min(limite, limiteMaximo)
-        : limitePorDefecto,
+    limite: Number.isInteger(limite) && limite > 0 ? Math.min(limite, limiteMaximo) : limitePorDefecto,
   };
 };

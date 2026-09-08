@@ -1,146 +1,52 @@
-import { Request, Response } from 'express';
-import { Types } from 'mongoose';
-import { NoticiaModelo, CategoriaNoticia, AccionHistorial, INoticia } from './noticia.model';
-import { sendServerError } from '../shared/controller.utils';
-import { enlaceDePostDeInstagram, resolverPortada } from '../shared/imagenRemota';
+/**
+ * Manejadores HTTP de las noticias. Las consultas y las reglas viven en
+ * `noticia.service.ts`; aqui solo se lee la peticion, se llama y se traduce el
+ * resultado a una respuesta.
+ */
+
+import type { Request, Response } from 'express';
+import * as noticias from './noticia.service';
+import { sendServerError, noEncontrada, peticionInvalida } from '../shared/controller.utils';
 import { deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 // Carga la declaracion global de Express.Request.user (definida en token.utils).
 import '../shared/token.utils';
 
-// La portada muestra primero lo mas reciente.
-const ORDEN_LISTADO = { createdAt: -1 } as const;
+const idInvalido = (res: Response): void => peticionInvalida(res, 'Identificador de noticia no válido');
 
-// El frontend espera el autor como { _id, username }, tanto en la noticia como
-// en cada entrada del historial.
-const AUTOR_POPULADO = 'username' as const;
-
-// Las dos rutas de autor se pueblan siempre juntas: la noticia y su historial.
-const RUTAS_AUTOR = [
-  { path: 'autor', select: AUTOR_POPULADO },
-  { path: 'historial.autor', select: AUTOR_POPULADO },
-] as const;
+const sinNoticia = (res: Response): void => noEncontrada(res, 'Noticia');
 
 /**
- * Lo que ilustra una noticia: o un post de Instagram insertado, o una imagen
- * copiada al bucket. Nunca las dos, para que el frontend no tenga que decidir.
+ * Mongoose rechaza el documento: es una peticion mal formada, no un fallo del
+ * servidor. `sendServerError` ya lo distingue, pero aqui el detalle ayuda a
+ * quien escribe desde el panel.
  */
-interface Ilustracion {
-  imagenPortada: string;
-  instagramPost: string;
-}
-
-/**
- * El panel tiene un unico campo y admite las dos cosas, porque para quien
- * escribe la noticia es lo mismo: pegar lo que ha copiado. Aqui se distingue.
- *
- * Un post de Instagram se guarda como enlace y lo monta su propio script; asi
- * la foto se ve entera, mientras que la miniatura que Instagram publica en la
- * pagina del post viene recortada a un cuadrado y no hay forma de pedirla sin
- * recortar. Cualquier otro enlace se trata como imagen y se copia al bucket.
- */
-const resolverIlustracion = async (valor: unknown, nombreBase: string): Promise<Ilustracion> => {
-  const texto = typeof valor === 'string' ? valor.trim() : '';
-  if (!texto) return { imagenPortada: '', instagramPost: '' };
-
-  const post = enlaceDePostDeInstagram(texto);
-  if (post) return { imagenPortada: '', instagramPost: post };
-
-  return { imagenPortada: await resolverPortada(texto, nombreBase), instagramPost: '' };
-};
-
-const noEncontrada = (res: Response): void => {
-  res.status(404).json({ error: 'Noticia no encontrada' });
-};
-
-const idInvalido = (res: Response): void => {
-  res.status(400).json({ error: 'Identificador de noticia no valido' });
-};
-
-// Express 5 tipa los parametros de ruta como string | string[].
-const parseId = (valor: string | string[]): string | null => {
-  if (Array.isArray(valor)) return null;
-  return Types.ObjectId.isValid(valor) ? valor : null;
-};
-
-const esCategoria = (valor: unknown): valor is CategoriaNoticia =>
-  typeof valor === 'string' && Object.values(CategoriaNoticia).includes(valor as CategoriaNoticia);
-
-const normalizarTags = (valor: unknown): string[] | undefined => {
-  if (valor === undefined) return undefined;
-  if (!Array.isArray(valor)) return [];
-  return valor.map((t) => String(t).trim()).filter(Boolean);
-};
-
-/**
- * Una entrada de historial es una foto del estado en el momento del cambio.
- * Se construye siempre a partir de la noticia ya modificada.
- */
-const entradaHistorial = (
-  noticia: Pick<INoticia, 'titulo' | 'contenido' | 'publicada'>,
-  accion: AccionHistorial,
-  autorId: string | undefined,
-) => ({
-  fecha:    new Date(),
-  autor:    autorId ? new Types.ObjectId(autorId) : null,
-  accion,
-  snapshot: {
-    titulo:    noticia.titulo,
-    contenido: noticia.contenido,
-    publicada: noticia.publicada,
-  },
-});
+const esValidacion = (error: unknown): boolean => (error as Error)?.name === 'ValidationError';
 
 // --- GET /api/noticias (publico: solo publicadas) ---
 export const getNoticias = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { categoria, q } = req.query;
-
-    const filtro: Record<string, unknown> = { publicada: true };
-
-    if (typeof categoria === 'string' && categoria.trim() !== '') {
-      if (!esCategoria(categoria)) {
-        res.status(400).json({ error: 'Categoria de noticia no valida' });
-        return;
-      }
-      filtro.categoria = categoria;
+    const lectura = noticias.leerFiltroPublico(req.query as Record<string, unknown>);
+    if (!lectura.ok) {
+      peticionInvalida(res, lectura.error);
+      return;
     }
 
-    if (typeof q === 'string' && q.trim() !== '') {
-      filtro.$text = { $search: q.trim() };
-    }
-
-    const noticias = await NoticiaModelo.find(filtro).sort(ORDEN_LISTADO).populate(RUTAS_AUTOR.slice());
-    res.status(200).json({ success: true, data: noticias });
+    res.status(200).json({ success: true, data: await noticias.listar(lectura.filtro) });
   } catch (error) {
     sendServerError(res, 'Error obteniendo noticias', error);
   }
 };
 
 // --- GET /api/noticias/:id (publico: solo si esta publicada) ---
-/**
- * Una noticia suelta, para que su direccion se pueda compartir y abrir directa
- * sin arrastrar el listado entero detras.
- *
- * Un borrador responde 404 y no 403: decir "existe pero no puedes verla"
- * convierte la ruta en un detector de noticias sin publicar, y desde fuera no
- * hay diferencia entre lo que no existe y lo que todavia no se ensena.
- */
+// Una noticia suelta, para que su direccion se pueda compartir y abrir directa
+// sin arrastrar el listado entero detras.
 export const getNoticia = async (req: Request, res: Response): Promise<void> => {
-  const id = parseId(req.params['id'] ?? '');
-  if (!id) {
-    idInvalido(res);
-    return;
-  }
+  const id = noticias.leerIdNoticia(req.params['id']);
+  if (!id) return idInvalido(res);
 
   try {
-    const noticia = await NoticiaModelo.findOne({ _id: id, publicada: true }).populate(
-      RUTAS_AUTOR.slice(),
-    );
-
-    if (!noticia) {
-      noEncontrada(res);
-      return;
-    }
+    const noticia = await noticias.buscarPublicada(id);
+    if (!noticia) return sinNoticia(res);
 
     res.status(200).json({ success: true, data: noticia });
   } catch (error) {
@@ -151,8 +57,7 @@ export const getNoticia = async (req: Request, res: Response): Promise<void> => 
 // --- GET /api/noticias/admin/all (admin: incluye borradores) ---
 export const getNoticiasAdmin = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const noticias = await NoticiaModelo.find().sort(ORDEN_LISTADO).populate(RUTAS_AUTOR.slice());
-    res.status(200).json({ success: true, data: noticias });
+    res.status(200).json({ success: true, data: await noticias.listarTodas() });
   } catch (error) {
     sendServerError(res, 'Error obteniendo noticias', error);
   }
@@ -161,49 +66,16 @@ export const getNoticiasAdmin = async (_req: Request, res: Response): Promise<vo
 // --- POST /api/noticias (admin) ---
 export const crearNoticia = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { titulo, extracto, contenido, imagenPortada, categoria, fechaEvento, horaInicio, horaFin, lugar, tags } =
-      req.body;
-
-    if (categoria !== undefined && !esCategoria(categoria)) {
-      res.status(400).json({ error: 'Categoria de noticia no valida' });
+    const creacion = await noticias.crearNoticia(req.body as Record<string, unknown>, req.user?.id);
+    if (!creacion.ok) {
+      peticionInvalida(res, creacion.error);
       return;
     }
 
-    const autorId = req.user?.id;
-
-    let ilustracion: Ilustracion;
-    try {
-      ilustracion = await resolverIlustracion(imagenPortada, String(titulo ?? 'portada'));
-    } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
-      return;
-    }
-
-    const noticia = new NoticiaModelo({
-      titulo,
-      extracto,
-      contenido,
-      imagenPortada: ilustracion.imagenPortada,
-      instagramPost: ilustracion.instagramPost,
-      categoria: categoria ?? CategoriaNoticia.GENERAL,
-      fechaEvento,
-      horaInicio,
-      horaFin,
-      lugar,
-      // Nace como borrador: publicar es un acto explicito (PATCH /publicar).
-      publicada: false,
-      autor: autorId ? new Types.ObjectId(autorId) : null,
-      tags: normalizarTags(tags) ?? [],
-    });
-
-    noticia.historial.push(entradaHistorial(noticia, AccionHistorial.CREADA, autorId));
-    await noticia.save();
-
-    const creada = await NoticiaModelo.findById(noticia._id).populate(RUTAS_AUTOR.slice());
-    res.status(201).json({ success: true, data: creada });
+    res.status(201).json({ success: true, data: await noticias.conAutores(creacion.noticia._id) });
   } catch (error) {
-    if ((error as Error).name === 'ValidationError') {
-      res.status(400).json({ error: 'Datos de noticia no validos', detail: (error as Error).message });
+    if (esValidacion(error)) {
+      res.status(400).json({ error: 'Datos de noticia no válidos', detail: (error as Error).message });
       return;
     }
     sendServerError(res, 'Error creando la noticia', error);
@@ -213,53 +85,24 @@ export const crearNoticia = async (req: Request, res: Response): Promise<void> =
 // --- PUT /api/noticias/:id (admin) ---
 export const actualizarNoticia = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = noticias.leerIdNoticia(req.params.id);
     if (id === null) return idInvalido(res);
 
-    const noticia = await NoticiaModelo.findById(id);
-    if (!noticia) return noEncontrada(res);
+    const noticia = await noticias.buscarPorId(id);
+    if (!noticia) return sinNoticia(res);
 
-    const { titulo, extracto, contenido, imagenPortada, categoria, fechaEvento, horaInicio, horaFin, lugar, tags } =
-      req.body;
-
-    if (categoria !== undefined) {
-      if (!esCategoria(categoria)) {
-        res.status(400).json({ error: 'Categoria de noticia no valida' });
-        return;
-      }
-      noticia.categoria = categoria;
+    const cambio = await noticias.aplicarCambios(noticia, req.body as Record<string, unknown>, req.user?.id);
+    if (!cambio.ok) {
+      peticionInvalida(res, cambio.error);
+      return;
     }
 
-    if (titulo !== undefined) noticia.titulo = titulo;
-    if (extracto !== undefined) noticia.extracto = extracto;
-    if (contenido !== undefined) noticia.contenido = contenido;
-
-    if (imagenPortada !== undefined) {
-      try {
-        const ilustracion = await resolverIlustracion(imagenPortada, noticia.titulo);
-        noticia.imagenPortada = ilustracion.imagenPortada;
-        noticia.instagramPost = ilustracion.instagramPost;
-      } catch (error) {
-        res.status(400).json({ error: (error as Error).message });
-        return;
-      }
-    }
-    if (fechaEvento !== undefined) noticia.fechaEvento = fechaEvento === '' ? undefined : fechaEvento;
-    if (horaInicio !== undefined) noticia.horaInicio = horaInicio;
-    if (horaFin !== undefined) noticia.horaFin = horaFin;
-    if (lugar !== undefined) noticia.lugar = lugar;
-
-    const tagsNormalizados = normalizarTags(tags);
-    if (tagsNormalizados !== undefined) noticia.tags = tagsNormalizados;
-
-    noticia.historial.push(entradaHistorial(noticia, AccionHistorial.EDITADA, req.user?.id));
     await noticia.save();
 
-    const actualizada = await NoticiaModelo.findById(noticia._id).populate(RUTAS_AUTOR.slice());
-    res.status(200).json({ success: true, data: actualizada });
+    res.status(200).json({ success: true, data: await noticias.conAutores(noticia._id) });
   } catch (error) {
-    if ((error as Error).name === 'ValidationError') {
-      res.status(400).json({ error: 'Datos de noticia no validos', detail: (error as Error).message });
+    if (esValidacion(error)) {
+      res.status(400).json({ error: 'Datos de noticia no válidos', detail: (error as Error).message });
       return;
     }
     sendServerError(res, 'Error actualizando la noticia', error);
@@ -269,20 +112,15 @@ export const actualizarNoticia = async (req: Request, res: Response): Promise<vo
 // --- PATCH /api/noticias/:id/publicar (admin) ---
 export const alternarPublicacionNoticia = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = noticias.leerIdNoticia(req.params.id);
     if (id === null) return idInvalido(res);
 
-    const noticia = await NoticiaModelo.findById(id);
-    if (!noticia) return noEncontrada(res);
+    const noticia = await noticias.buscarPorId(id);
+    if (!noticia) return sinNoticia(res);
 
-    noticia.publicada = !noticia.publicada;
+    await noticias.alternarPublicacion(noticia, req.user?.id);
 
-    const accion = noticia.publicada ? AccionHistorial.PUBLICADA : AccionHistorial.DESPUBLICADA;
-    noticia.historial.push(entradaHistorial(noticia, accion, req.user?.id));
-    await noticia.save();
-
-    const cambiada = await NoticiaModelo.findById(noticia._id).populate(RUTAS_AUTOR.slice());
-    res.status(200).json({ success: true, data: cambiada });
+    res.status(200).json({ success: true, data: await noticias.conAutores(noticia._id) });
   } catch (error) {
     sendServerError(res, 'Error cambiando el estado de publicacion', error);
   }
@@ -291,11 +129,11 @@ export const alternarPublicacionNoticia = async (req: Request, res: Response): P
 // --- DELETE /api/noticias/:id (admin) ---
 export const eliminarNoticia = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = noticias.leerIdNoticia(req.params.id);
     if (id === null) return idInvalido(res);
 
-    const noticia = await NoticiaModelo.findByIdAndDelete(id);
-    if (!noticia) return noEncontrada(res);
+    const noticia = await noticias.eliminarNoticia(id);
+    if (!noticia) return sinNoticia(res);
 
     // La portada vive en el bucket desde que se copia al guardar: si no se
     // borra aqui, cada noticia eliminada deja su imagen ocupando sitio sin que

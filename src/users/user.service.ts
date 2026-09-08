@@ -1,11 +1,7 @@
-import { FilterQuery, HydratedDocument } from 'mongoose';
-import { IUser, User, UserRole, UserStatus } from './user.model';
-import {
-  booleanoDeQuery,
-  leerPaginacion,
-  regexContiene,
-  textoDeQuery,
-} from '../shared/consulta.utils';
+import type { FilterQuery, HydratedDocument } from 'mongoose';
+import type { IUser } from './user.model';
+import { User, UserRole, UserStatus } from './user.model';
+import { booleanoDeQuery, leerPaginacion, regexContiene, textoDeQuery } from '../shared/consulta.utils';
 
 /**
  * Busqueda de personas del panel de administracion. El controlador solo lee la
@@ -28,14 +24,14 @@ const SIN_PASSWORD = '-password';
  * desacopla la tabla del esquema.
  */
 const CAMPOS_ORDENABLES = {
-  nombre:   ['profile.firstName', 'profile.lastName'],
+  nombre: ['profile.firstName', 'profile.lastName'],
   username: ['username'],
-  email:    ['email'],
-  role:     ['role'],
-  status:   ['status'],
-  cliente:  ['customer.isCustomer'],
+  email: ['email'],
+  role: ['role'],
+  status: ['status'],
+  cliente: ['customer.isCustomer'],
   licencia: ['sportsProfile.licenseNumber'],
-  alta:     ['createdAt'],
+  alta: ['createdAt'],
 } as const;
 
 export type CampoOrdenUsuario = keyof typeof CAMPOS_ORDENABLES;
@@ -47,10 +43,7 @@ const esCampoOrdenable = (valor: unknown): valor is CampoOrdenUsuario =>
   typeof valor === 'string' && Object.hasOwn(CAMPOS_ORDENABLES, valor);
 
 /** Traduce la columna elegida a las rutas reales que entiende Mongo. */
-const construirOrden = (
-  campo: CampoOrdenUsuario,
-  direccion: DireccionOrden,
-): Record<string, 1 | -1> => {
+const construirOrden = (campo: CampoOrdenUsuario, direccion: DireccionOrden): Record<string, 1 | -1> => {
   const sentido = direccion === 'desc' ? -1 : 1;
 
   return Object.fromEntries(CAMPOS_ORDENABLES[campo].map((ruta) => [ruta, sentido]));
@@ -77,9 +70,7 @@ export interface ListadoUsuarios {
   limite: number;
 }
 
-export type LecturaCriterios =
-  | { ok: true; criterios: CriteriosUsuario }
-  | { ok: false; error: string };
+export type LecturaCriterios = { ok: true; criterios: CriteriosUsuario } | { ok: false; error: string };
 
 const esRol = (valor: unknown): valor is UserRole =>
   typeof valor === 'string' && Object.values(UserRole).includes(valor as UserRole);
@@ -90,12 +81,15 @@ const esEstado = (valor: unknown): valor is UserStatus =>
 export const leerCriteriosUsuario = (query: Record<string, unknown>): LecturaCriterios => {
   const role = textoDeQuery(query.role);
   if (role !== undefined && !esRol(role)) {
-    return { ok: false, error: `Rol no valido. Valores admitidos: ${Object.values(UserRole).join(', ')}` };
+    return { ok: false, error: `Rol no válido. Valores admitidos: ${Object.values(UserRole).join(', ')}` };
   }
 
   const status = textoDeQuery(query.status);
   if (status !== undefined && !esEstado(status)) {
-    return { ok: false, error: `Estado no valido. Valores admitidos: ${Object.values(UserStatus).join(', ')}` };
+    return {
+      ok: false,
+      error: `Estado no válido. Valores admitidos: ${Object.values(UserStatus).join(', ')}`,
+    };
   }
 
   // Una columna desconocida cae al orden por defecto en lugar de dar error: el
@@ -109,13 +103,13 @@ export const leerCriteriosUsuario = (query: Record<string, unknown>): LecturaCri
   return {
     ok: true,
     criterios: {
-      texto:     textoDeQuery(query.q),
-      username:  textoDeQuery(query.username),
-      email:     textoDeQuery(query.email),
+      texto: textoDeQuery(query.q),
+      username: textoDeQuery(query.username),
+      email: textoDeQuery(query.email),
       role,
       status,
       esCliente: booleanoDeQuery(query.customer),
-      licencia:  textoDeQuery(query.license),
+      licencia: textoDeQuery(query.license),
       orden,
       direccion,
       pagina,
@@ -128,9 +122,9 @@ const construirFiltro = (criterios: CriteriosUsuario): FilterQuery<IUser> => {
   const filtro: FilterQuery<IUser> = {};
 
   if (criterios.username) filtro.username = regexContiene(criterios.username);
-  if (criterios.email)    filtro.email    = regexContiene(criterios.email);
-  if (criterios.role)     filtro.role     = criterios.role;
-  if (criterios.status)   filtro.status   = criterios.status;
+  if (criterios.email) filtro.email = regexContiene(criterios.email);
+  if (criterios.role) filtro.role = criterios.role;
+  if (criterios.status) filtro.status = criterios.status;
 
   if (criterios.esCliente !== undefined) filtro['customer.isCustomer'] = criterios.esCliente;
   if (criterios.licencia) filtro['sportsProfile.licenseNumber'] = regexContiene(criterios.licencia);

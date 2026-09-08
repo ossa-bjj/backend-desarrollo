@@ -1,8 +1,8 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { PREFIJO_CATEGORIA, esCategoria } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import * as productos from './producto.service';
-import { sendServerError } from '../shared/controller.utils';
+import { sendServerError, esDuplicado } from '../shared/controller.utils';
 import { uploadToR2, deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
 
 // Express 5 tipa los parametros de ruta como string | string[].
@@ -15,17 +15,13 @@ const parseCodigo = (valor: string | string[]): number | null => {
 
 const codigoInvalido = (res: Response): void => {
   res.status(400).json({
-    error: `Codigo de articulo no valido: debe ser un entero positivo fuera del rango ${CODIGO_SERVICIO_MIN}-${CODIGO_SERVICIO_MAX}, reservado a los servicios`,
+    error: `Código de artículo no válido: debe ser un entero positivo fuera del rango ${CODIGO_SERVICIO_MIN}-${CODIGO_SERVICIO_MAX}, reservado a los servicios`,
   });
 };
 
 const noEncontrado = (res: Response): void => {
   res.status(404).json({ error: 'Producto no encontrado' });
 };
-
-// Mongoose lanza code 11000 al violar el indice unico de codigoArticulo.
-const esDuplicado = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
 
 // --- GET /api/productos?categoria=&codigo=&nombre=&marca=&q=&destacado=&pagina=&limite= (publico) ---
 export const getProductos = async (req: Request, res: Response): Promise<void> => {
@@ -36,13 +32,17 @@ export const getProductos = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const { productos: encontrados, total, pagina, limite } =
-      await productos.listarProductos(lectura.criterios);
+    const {
+      productos: encontrados,
+      total,
+      pagina,
+      limite,
+    } = await productos.listarProductos(lectura.criterios);
 
     res.status(200).json({
       success: true,
-      data:    encontrados,
-      meta:    { total, pagina, limite },
+      data: encontrados,
+      meta: { total, pagina, limite },
     });
   } catch (error) {
     sendServerError(res, 'Error obteniendo productos', error);
@@ -54,14 +54,14 @@ export const getSiguienteCodigo = async (req: Request, res: Response): Promise<v
   try {
     const { categoria } = req.query;
     if (!esCategoria(categoria)) {
-      res.status(400).json({ error: 'Se requiere una categoria valida' });
+      res.status(400).json({ error: 'Se requiere una categoría válida' });
       return;
     }
 
     const codigo = await productos.siguienteCodigoLibre(categoria);
     if (codigo === null) {
       res.status(409).json({
-        error: `La serie de codigos ${PREFIJO_CATEGORIA[categoria]}XX de ${categoria} esta agotada`,
+        error: `La serie de códigos ${PREFIJO_CATEGORIA[categoria]}XX de ${categoria} está agotada`,
       });
       return;
     }
@@ -91,8 +91,16 @@ export const getProductoPorCodigo = async (req: Request, res: Response): Promise
 export const crearProducto = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      codigoArticulo, name, price, description, stock,
-      category, subcategoria, marca, imagenes, tags,
+      codigoArticulo,
+      name,
+      price,
+      description,
+      tallas,
+      category,
+      subcategoria,
+      marca,
+      imagenes,
+      tags,
     } = req.body;
 
     const invalido = productos.validarCodigoYCategoria(codigoArticulo, category);
@@ -101,15 +109,35 @@ export const crearProducto = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Sin tallas, el producto nace con las cinco a cero: se da de alta primero
+    // y se rellenan existencias despues, que es como se trabaja en el panel.
+    const tallasNormalizadas =
+      tallas === undefined ? productos.tallasVacias() : productos.normalizarTallas(tallas);
+
+    if (!tallasNormalizadas) {
+      res
+        .status(400)
+        .json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
+      return;
+    }
+
     const producto = await productos.crearProducto({
-      codigoArticulo: Number(codigoArticulo), name, price, description, stock,
-      category, subcategoria, marca, imagenes, tags,
+      codigoArticulo: Number(codigoArticulo),
+      name,
+      price,
+      description,
+      tallas: tallasNormalizadas,
+      category,
+      subcategoria,
+      marca,
+      imagenes,
+      tags,
     });
 
     res.status(201).json({ success: true, message: 'Producto creado correctamente', data: producto });
   } catch (error) {
     if (esDuplicado(error)) {
-      res.status(409).json({ error: 'Ya existe un producto con ese codigo de articulo' });
+      res.status(409).json({ error: 'Ya existe un producto con ese código de artículo' });
       return;
     }
     sendServerError(res, 'Error creando producto', error);
@@ -152,13 +180,19 @@ export const actualizarStock = async (req: Request, res: Response): Promise<void
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
-    const { stock } = req.body;
-    if (typeof stock !== 'number' || !Number.isInteger(stock) || stock < 0) {
-      res.status(400).json({ error: 'El stock debe ser un entero mayor o igual a 0' });
+    // El cuerpo trae las cinco tallas con su stock. Se manda la tabla entera y
+    // no una talla suelta porque el panel edita la fila completa: asi una
+    // pantalla abierta hace rato no puede pisar el resto de tallas con valores
+    // viejos sin que se note.
+    const tallas = productos.normalizarTallas(req.body.tallas);
+    if (!tallas) {
+      res
+        .status(400)
+        .json({ error: 'Las tallas deben ser S, M, L, XL o XXL con un stock entero no negativo' });
       return;
     }
 
-    const producto = await productos.actualizarStock(codigo, stock);
+    const producto = await productos.actualizarStock(codigo, tallas);
     if (!producto) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
@@ -175,7 +209,7 @@ export const anadirImagenes = async (req: Request, res: Response): Promise<void>
 
     const files = (req.files ?? []) as Express.Multer.File[];
     if (files.length === 0) {
-      res.status(400).json({ error: 'No se enviaron imagenes' });
+      res.status(400).json({ error: 'No se enviaron imágenes' });
       return;
     }
 
@@ -183,9 +217,7 @@ export const anadirImagenes = async (req: Request, res: Response): Promise<void>
     // objetos huerfanos en el bucket por un codigo equivocado.
     if (!(await productos.existePorCodigo(codigo))) return noEncontrado(res);
 
-    const urls = await Promise.all(
-      files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)),
-    );
+    const urls = await Promise.all(files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)));
 
     const producto = await productos.anadirImagenes(codigo, urls);
     if (!producto) return noEncontrado(res);
@@ -216,7 +248,11 @@ export const eliminarImagen = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    try { await deleteFromR2(keyFromPublicUrl(url)); } catch { /* el objeto ya no estaba en R2 */ }
+    try {
+      await deleteFromR2(keyFromPublicUrl(url));
+    } catch {
+      /* el objeto ya no estaba en R2 */
+    }
 
     res.status(200).json({ success: true, data: producto });
   } catch (error) {

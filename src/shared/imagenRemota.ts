@@ -161,7 +161,12 @@ export const copiarImagenRemotaAR2 = async (origen: string, nombreBase: string):
   }
 
   const datos = await leerAcotado(respuesta, MAXIMO_IMAGEN);
-  const nombre = `${nombreBase.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40) || 'portada'}.${extensionDe(tipo)}`;
+  const nombre = `${
+    nombreBase
+      .replace(/[^a-z0-9]+/gi, '-')
+      .toLowerCase()
+      .slice(0, 40) || 'portada'
+  }.${extensionDe(tipo)}`;
 
   return uploadToR2(datos, nombre, tipo);
 };

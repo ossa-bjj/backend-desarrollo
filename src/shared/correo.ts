@@ -34,12 +34,12 @@ export const enviarCorreo = async ({ para, asunto, html }: Correo): Promise<bool
     const respuesta = await fetch(API, {
       method: 'POST',
       headers: {
-        Authorization:  `Bearer ${process.env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from:    process.env.CORREO_REMITENTE,
-        to:      [para],
+        from: process.env.CORREO_REMITENTE,
+        to: [para],
         subject: asunto,
         html,
       }),
@@ -67,10 +67,14 @@ export const enviarCorreo = async ({ para, asunto, html }: Correo): Promise<bool
 export const enviarCorreoDeRecuperacion = (para: string, enlace: string): Promise<boolean> =>
   enviarCorreo({
     para,
-    asunto: 'Recupera tu contrasena',
+    // El asunto y el cuerpo los lee una persona, asi que van en español
+    // correcto. Los comentarios del proyecto van sin acentos; esto no es un
+    // comentario, y un correo con un enlace que dice "contrasena" parece
+    // fraudulento, que es justo lo contrario de lo que necesita.
+    asunto: 'Recupera tu contraseña',
     html: `
-      <p>Has pedido restablecer tu contrasena.</p>
-      <p><a href="${enlace}">Elegir una contrasena nueva</a></p>
-      <p>El enlace caduca en una hora. Si no has sido tu, ignora este correo.</p>
+      <p>Has pedido restablecer tu contraseña.</p>
+      <p><a href="${enlace}">Elegir una contraseña nueva</a></p>
+      <p>El enlace caduca en una hora. Si no has sido tú, ignora este correo.</p>
     `,
   });

@@ -1,19 +1,20 @@
-import { Schema, model, Types } from 'mongoose';
+import type { Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 import { esReferenciaDeNuestroAlmacen, normalizarUrlMedia } from '../shared/r2.utils';
 
 export enum CategoriaNoticia {
-  EVENTO    = 'EVENTO',
+  EVENTO = 'EVENTO',
   RESULTADO = 'RESULTADO',
-  CLUB      = 'CLUB',
+  CLUB = 'CLUB',
   PROMOCION = 'PROMOCION',
-  GENERAL   = 'GENERAL',
+  GENERAL = 'GENERAL',
 }
 
 export enum AccionHistorial {
-  CREADA        = 'creada',
-  EDITADA       = 'editada',
-  PUBLICADA     = 'publicada',
-  DESPUBLICADA  = 'despublicada',
+  CREADA = 'creada',
+  EDITADA = 'editada',
+  PUBLICADA = 'publicada',
+  DESPUBLICADA = 'despublicada',
 }
 
 /**
@@ -56,21 +57,21 @@ export interface INoticia {
 const EntradaHistorialSchema = new Schema<IEntradaHistorial>(
   {
     fecha: {
-      type:    Date,
+      type: Date,
       default: Date.now,
     },
     autor: {
-      type:    Schema.Types.ObjectId,
-      ref:     'User',
+      type: Schema.Types.ObjectId,
+      ref: 'User',
       default: null,
     },
     accion: {
-      type:     String,
-      enum:     Object.values(AccionHistorial),
+      type: String,
+      enum: Object.values(AccionHistorial),
       required: [true, 'La accion del historial es obligatoria'],
     },
     snapshot: {
-      titulo:    { type: String, default: '' },
+      titulo: { type: String, default: '' },
       contenido: { type: String, default: '' },
       publicada: { type: Boolean, default: false },
     },
@@ -85,21 +86,21 @@ const HORA_VALIDA = /^([01]\d|2[0-3]):[0-5]\d$/;
 const NoticiaSchema = new Schema<INoticia>(
   {
     titulo: {
-      type:      String,
-      required:  [true, 'El titulo es obligatorio'],
-      trim:      true,
+      type: String,
+      required: [true, 'El titulo es obligatorio'],
+      trim: true,
       maxlength: [160, 'El titulo no puede superar los 160 caracteres'],
     },
     extracto: {
-      type:      String,
-      required:  [true, 'El extracto es obligatorio'],
-      trim:      true,
+      type: String,
+      required: [true, 'El extracto es obligatorio'],
+      trim: true,
       maxlength: [280, 'El extracto no puede superar los 280 caracteres'],
     },
     contenido: {
-      type:     String,
+      type: String,
       required: [true, 'El contenido es obligatorio'],
-      trim:     true,
+      trim: true,
     },
     imagenPortada: {
       type: String,
@@ -110,28 +111,28 @@ const NoticiaSchema = new Schema<INoticia>(
       trim: true,
     },
     categoria: {
-      type:     String,
-      enum:     Object.values(CategoriaNoticia),
-      default:  CategoriaNoticia.GENERAL,
+      type: String,
+      enum: Object.values(CategoriaNoticia),
+      default: CategoriaNoticia.GENERAL,
       required: [true, 'La categoria es obligatoria'],
     },
     fechaEvento: {
       type: Date,
     },
     horaInicio: {
-      type:     String,
-      trim:     true,
+      type: String,
+      trim: true,
       validate: {
         validator: (valor: string) => !valor || HORA_VALIDA.test(valor),
-        message:   'La hora de inicio debe tener el formato HH:MM',
+        message: 'La hora de inicio debe tener el formato HH:MM',
       },
     },
     horaFin: {
-      type:     String,
-      trim:     true,
+      type: String,
+      trim: true,
       validate: {
         validator: (valor: string) => !valor || HORA_VALIDA.test(valor),
-        message:   'La hora de fin debe tener el formato HH:MM',
+        message: 'La hora de fin debe tener el formato HH:MM',
       },
     },
     lugar: {
@@ -139,20 +140,20 @@ const NoticiaSchema = new Schema<INoticia>(
       trim: true,
     },
     publicada: {
-      type:    Boolean,
+      type: Boolean,
       default: false,
     },
     autor: {
-      type:    Schema.Types.ObjectId,
-      ref:     'User',
+      type: Schema.Types.ObjectId,
+      ref: 'User',
       default: null,
     },
     tags: {
-      type:    [String],
+      type: [String],
       default: [],
     },
     historial: {
-      type:    [EntradaHistorialSchema],
+      type: [EntradaHistorialSchema],
       default: [],
     },
   },

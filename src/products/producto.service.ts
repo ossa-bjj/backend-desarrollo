@@ -1,12 +1,8 @@
-import { FilterQuery, HydratedDocument } from 'mongoose';
-import { Categoria, IProduct, PREFIJO_CATEGORIA, ProductoModelo, esCategoria } from './producto.model';
+import type { FilterQuery, HydratedDocument } from 'mongoose';
+import type { IProduct, ITallaStock } from './producto.model';
+import { Categoria, PREFIJO_CATEGORIA, ProductoModelo, TALLAS, esCategoria, esTalla } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
-import {
-  booleanoDeQuery,
-  leerPaginacion,
-  regexContiene,
-  textoDeQuery,
-} from '../shared/consulta.utils';
+import { booleanoDeQuery, leerPaginacion, regexContiene, textoDeQuery } from '../shared/consulta.utils';
 import { soloCampos } from '../shared/actualizacion.utils';
 
 /**
@@ -47,12 +43,9 @@ export interface ListadoProductos {
 }
 
 /** Criterios validados, o el mensaje que el controlador devolvera como 400. */
-export type LecturaCriterios =
-  | { ok: true; criterios: CriteriosProducto }
-  | { ok: false; error: string };
+export type LecturaCriterios = { ok: true; criterios: CriteriosProducto } | { ok: false; error: string };
 
 const categoriasAdmitidas = (): string => Object.values(Categoria).join(', ');
-
 
 // --- Reglas del codigo de articulo ---
 
@@ -61,9 +54,7 @@ const categoriasAdmitidas = (): string => Object.values(Categoria).join(', ');
  * que comparten con los productos el mismo espacio de codigos.
  */
 export const esCodigoDeProducto = (codigo: number): boolean =>
-  Number.isInteger(codigo) &&
-  codigo > 0 &&
-  !(codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX);
+  Number.isInteger(codigo) && codigo > 0 && !(codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX);
 
 /**
  * Comprueba a la vez el codigo y su coherencia con la categoria. Es regla de
@@ -103,8 +94,7 @@ export const siguienteCodigoLibre = async (categoria: Categoria): Promise<number
   const primero = Number(`${PREFIJO_CATEGORIA[categoria]}00`);
   const ultimo = primero + CODIGOS_POR_CATEGORIA - 1;
 
-  const ocupadoMasAlto = await ProductoModelo
-    .findOne({ codigoArticulo: { $gte: primero, $lte: ultimo } })
+  const ocupadoMasAlto = await ProductoModelo.findOne({ codigoArticulo: { $gte: primero, $lte: ultimo } })
     .sort({ codigoArticulo: -1 })
     .select('codigoArticulo');
 
@@ -112,13 +102,12 @@ export const siguienteCodigoLibre = async (categoria: Categoria): Promise<number
   return siguiente > ultimo ? null : siguiente;
 };
 
-
 // --- Listado ---
 
 export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCriterios => {
   const categoria = textoDeQuery(query.categoria);
   if (categoria !== undefined && !esCategoria(categoria)) {
-    return { ok: false, error: `Categoria no valida. Valores admitidos: ${categoriasAdmitidas()}` };
+    return { ok: false, error: `Categoría no válida. Valores admitidos: ${categoriasAdmitidas()}` };
   }
 
   // El panel busca por fragmento de codigo ("10" -> 1001, 1002...). Aceptar
@@ -126,7 +115,7 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
   // delicada; limitarlo a digitos deja la intencion clara y la consulta simple.
   const codigo = textoDeQuery(query.codigo);
   if (codigo !== undefined && !new RegExp(`^\\d{1,${LONGITUD_CODIGO}}$`).test(codigo)) {
-    return { ok: false, error: `El filtro de codigo admite entre 1 y ${LONGITUD_CODIGO} digitos` };
+    return { ok: false, error: `El filtro de código admite entre 1 y ${LONGITUD_CODIGO} dígitos` };
   }
 
   const { pagina, limite } = leerPaginacion(query, LIMITE_POR_DEFECTO, LIMITE_MAXIMO);
@@ -136,9 +125,9 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
     criterios: {
       categoria,
       codigo,
-      nombre:    textoDeQuery(query.nombre),
-      marca:     textoDeQuery(query.marca),
-      texto:     textoDeQuery(query.q),
+      nombre: textoDeQuery(query.nombre),
+      marca: textoDeQuery(query.marca),
+      texto: textoDeQuery(query.q),
       destacado: booleanoDeQuery(query.destacado),
       pagina,
       limite,
@@ -150,9 +139,9 @@ const construirFiltro = (criterios: CriteriosProducto): FilterQuery<IProduct> =>
   const filtro: FilterQuery<IProduct> = {};
 
   if (criterios.categoria) filtro.category = criterios.categoria;
-  if (criterios.nombre)    filtro.name     = regexContiene(criterios.nombre);
-  if (criterios.marca)     filtro.marca    = regexContiene(criterios.marca);
-  if (criterios.texto)     filtro.$text    = { $search: criterios.texto };
+  if (criterios.nombre) filtro.name = regexContiene(criterios.nombre);
+  if (criterios.marca) filtro.marca = regexContiene(criterios.marca);
+  if (criterios.texto) filtro.$text = { $search: criterios.texto };
 
   if (criterios.destacado !== undefined) {
     filtro.tags = criterios.destacado ? TAG_DESTACADO : { $ne: TAG_DESTACADO };
@@ -177,9 +166,7 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
 
   // Con busqueda de texto manda la relevancia; sin ella, el orden del catalogo.
   const consulta = criterios.texto
-    ? ProductoModelo
-        .find(filtro, { score: { $meta: 'textScore' } })
-        .sort({ score: { $meta: 'textScore' } })
+    ? ProductoModelo.find(filtro, { score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' } })
     : ProductoModelo.find(filtro).sort(ORDEN_LISTADO);
 
   // El total se cuenta con el mismo filtro que la pagina: sin el, el cliente no
@@ -192,6 +179,105 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
   return { productos, total, pagina: criterios.pagina, limite: criterios.limite };
 };
 
+// --- Tallas y existencias ---
+
+/**
+ * Las reglas de talla viven aqui y no en quien las consulta porque tienen dos
+ * consumidores que deben coincidir: el alta del pedido, que decide si se puede
+ * vender, y el cobro, que descuenta lo vendido. Si cada uno resolviera el stock
+ * a su manera se podria aceptar un pedido y descontar de otra talla.
+ */
+
+/** Unidades disponibles de una talla. Cero si el producto no la vende. */
+export const stockDeTalla = (producto: Pick<IProduct, 'tallas'>, talla: string): number =>
+  producto.tallas.find((t) => t.talla === talla)?.stock ?? 0;
+
+/** Todas las tallas a cero: el punto de partida de un producto nuevo. */
+export const tallasVacias = (): ITallaStock[] => TALLAS.map((talla) => ({ talla, stock: 0 }));
+
+/**
+ * Normaliza lo que llega del panel a las cinco tallas, en orden y sin repetir.
+ *
+ * Un formulario puede mandarlas desordenadas, incompletas o con una talla
+ * inventada. Guardar eso tal cual dejaria productos a los que les falta una
+ * talla, y entonces «no la vende» y «esta agotada» pasarian a ser lo mismo.
+ */
+export const normalizarTallas = (valor: unknown): ITallaStock[] | null => {
+  if (!Array.isArray(valor)) return null;
+
+  const porTalla = new Map<string, number>();
+  for (const entrada of valor) {
+    const talla = (entrada as { talla?: unknown })?.talla;
+    const stock = Number((entrada as { stock?: unknown })?.stock);
+
+    if (!esTalla(talla)) return null;
+    if (!Number.isInteger(stock) || stock < 0) return null;
+    porTalla.set(talla, stock);
+  }
+
+  return TALLAS.map((talla) => ({ talla, stock: porTalla.get(talla) ?? 0 }));
+};
+
+/**
+ * Decide si se pueden vender `cantidad` unidades de una talla.
+ *
+ * Devuelve el motivo por el que no se puede, o null si se puede. El texto sale
+ * de aqui para que el cliente lea lo mismo venga del alta del pedido o del
+ * cobro.
+ */
+export const motivoParaNoVender = (
+  producto: Pick<IProduct, 'name' | 'tallas'>,
+  talla: unknown,
+  cantidad: number,
+): string | null => {
+  // Un producto se vende por tallas, asi que sin talla no hay de donde
+  // descontar: pedir «una camiseta» sin decir cual es una peticion incompleta.
+  //
+  // Se distingue no haber puesto talla de haber puesto una que no existe: son
+  // dos errores distintos y decir «falta la talla» a quien mando «XXXL» manda a
+  // buscar el fallo donde no esta.
+  if (talla === undefined || talla === null || talla === '') {
+    return `Falta la talla de "${producto.name}"`;
+  }
+
+  if (!esTalla(talla) || !producto.tallas.some((t) => t.talla === talla)) {
+    return `"${producto.name}" no se vende en talla ${String(talla)}`;
+  }
+
+  const disponibles = stockDeTalla(producto, talla);
+  if (cantidad > disponibles) {
+    return `Solo quedan ${disponibles} unidades de "${producto.name}" en talla ${talla}`;
+  }
+
+  return null;
+};
+
+/**
+ * Descuenta unidades de una talla concreta.
+ *
+ * El filtro exige que quede stock suficiente EN ESA TALLA, asi que dos cobros
+ * simultaneos del ultimo articulo no pueden dejarlo en negativo: el segundo no
+ * encuentra documento que actualizar.
+ */
+export const descontarStockDeTalla = (codigo: number, talla: string, cantidad: number) =>
+  ProductoModelo.findOneAndUpdate(
+    { codigoArticulo: codigo, tallas: { $elemMatch: { talla, stock: { $gte: cantidad } } } },
+    { $inc: { 'tallas.$[entrada].stock': -cantidad } },
+    { arrayFilters: [{ 'entrada.talla': talla }], new: true },
+  );
+
+/**
+ * Devuelve unidades a una talla. Lo contrario de descontar, para cuando se
+ * cancela un pedido ya cobrado.
+ *
+ * Aqui no hay condicion que comprobar: sumar nunca deja el stock en negativo.
+ */
+export const devolverStockDeTalla = (codigo: number, talla: string, cantidad: number) =>
+  ProductoModelo.findOneAndUpdate(
+    { codigoArticulo: codigo, 'tallas.talla': talla },
+    { $inc: { 'tallas.$[entrada].stock': cantidad } },
+    { arrayFilters: [{ 'entrada.talla': talla }], new: true },
+  );
 
 // --- Actualizacion ---
 
@@ -200,39 +286,35 @@ export const listarProductos = async (criterios: CriteriosProducto): Promise<Lis
  * producto y no se reasigna.
  */
 const CAMPOS_ACTUALIZABLES = [
-  'name', 'price', 'description', 'stock',
-  'category', 'subcategoria', 'marca', 'imagenes', 'tags',
+  'name',
+  'price',
+  'description',
+  'tallas',
+  'category',
+  'subcategoria',
+  'marca',
+  'imagenes',
+  'tags',
 ] as const;
 
 /** Deja pasar solo los campos conocidos. Ver `shared/actualizacion.utils.ts`. */
 export const soloCamposActualizables = (cuerpo: unknown): Partial<IProduct> =>
   soloCampos<IProduct>(cuerpo, CAMPOS_ACTUALIZABLES);
 
-
 // --- Documento suelto ---
 
-export const buscarPorCodigo = (codigo: number) =>
-  ProductoModelo.findOne({ codigoArticulo: codigo });
+export const buscarPorCodigo = (codigo: number) => ProductoModelo.findOne({ codigoArticulo: codigo });
 
 export const existePorCodigo = async (codigo: number): Promise<boolean> =>
   (await ProductoModelo.exists({ codigoArticulo: codigo })) !== null;
 
-export const crearProducto = (datos: Partial<IProduct>) =>
-  new ProductoModelo(datos).save();
+export const crearProducto = (datos: Partial<IProduct>) => new ProductoModelo(datos).save();
 
 export const actualizarProducto = (codigo: number, cambios: Partial<IProduct>) =>
-  ProductoModelo.findOneAndUpdate(
-    { codigoArticulo: codigo },
-    cambios,
-    { new: true, runValidators: true },
-  );
+  ProductoModelo.findOneAndUpdate({ codigoArticulo: codigo }, cambios, { new: true, runValidators: true });
 
-export const actualizarStock = (codigo: number, stock: number) =>
-  ProductoModelo.findOneAndUpdate(
-    { codigoArticulo: codigo },
-    { stock },
-    { new: true, runValidators: true },
-  );
+export const actualizarStock = (codigo: number, tallas: ITallaStock[]) =>
+  ProductoModelo.findOneAndUpdate({ codigoArticulo: codigo }, { tallas }, { new: true, runValidators: true });
 
 export const anadirImagenes = (codigo: number, urls: string[]) =>
   ProductoModelo.findOneAndUpdate(

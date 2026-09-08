@@ -8,8 +8,7 @@ import { DisponibilidadModelo, EstadoSlot } from './disponibilidad.model';
  */
 const HORAS_RETENCION = 48;
 
-const calcularCaducidad = (): Date =>
-  new Date(Date.now() + HORAS_RETENCION * 60 * 60 * 1000);
+const calcularCaducidad = (): Date => new Date(Date.now() + HORAS_RETENCION * 60 * 60 * 1000);
 
 /**
  * Libera las retenciones provisionales ya caducadas.
@@ -21,13 +20,13 @@ const calcularCaducidad = (): Date =>
  */
 export const liberarRetencionesCaducadas = async (servicio?: number): Promise<number> => {
   const filtro: Record<string, unknown> = {
-    estado:        EstadoSlot.OCUPADO,
+    estado: EstadoSlot.OCUPADO,
     retenidoHasta: { $lt: new Date() },
   };
   if (servicio !== undefined) filtro.servicio = servicio;
 
   const resultado = await DisponibilidadModelo.updateMany(filtro, {
-    $set:   { estado: EstadoSlot.DISPONIBLE },
+    $set: { estado: EstadoSlot.DISPONIBLE },
     $unset: { pedidoId: '', retenidoHasta: '' },
   });
 
@@ -57,7 +56,7 @@ export const retenerSlots = async (
     const actualizado = await DisponibilidadModelo.findOneAndUpdate(
       { _id: slotId, estado: EstadoSlot.DISPONIBLE },
       {
-        estado:        EstadoSlot.OCUPADO,
+        estado: EstadoSlot.OCUPADO,
         pedidoId,
         retenidoHasta: calcularCaducidad(),
       },
@@ -76,7 +75,7 @@ export const liberarSlotsDePedido = async (pedidoId: Types.ObjectId | string): P
   await DisponibilidadModelo.updateMany(
     { pedidoId },
     {
-      $set:   { estado: EstadoSlot.DISPONIBLE },
+      $set: { estado: EstadoSlot.DISPONIBLE },
       $unset: { pedidoId: '', retenidoHasta: '' },
     },
   );
@@ -90,16 +89,13 @@ export const liberarSlotsDePedido = async (pedidoId: Types.ObjectId | string): P
  * devolverlos donde estaban, y los que no tenian horario previo, soltarlos.
  * Filtra por `pedidoId` ademas de por `_id` para no liberar la reserva de otro.
  */
-export const liberarSlot = async (
-  pedidoId: Types.ObjectId | string,
-  slotId: string,
-): Promise<void> => {
+export const liberarSlot = async (pedidoId: Types.ObjectId | string, slotId: string): Promise<void> => {
   if (!Types.ObjectId.isValid(slotId)) return;
 
   await DisponibilidadModelo.updateOne(
     { _id: slotId, pedidoId },
     {
-      $set:   { estado: EstadoSlot.DISPONIBLE },
+      $set: { estado: EstadoSlot.DISPONIBLE },
       $unset: { pedidoId: '', retenidoHasta: '' },
     },
   );
@@ -131,7 +127,7 @@ export const reasignarSlot = async (
   const nuevo = await DisponibilidadModelo.findOneAndUpdate(
     { _id: slotNuevoId, estado: EstadoSlot.DISPONIBLE },
     {
-      estado:        EstadoSlot.OCUPADO,
+      estado: EstadoSlot.OCUPADO,
       pedidoId,
       retenidoHasta: calcularCaducidad(),
     },
@@ -145,7 +141,7 @@ export const reasignarSlot = async (
     await DisponibilidadModelo.updateOne(
       { _id: slotAnteriorId, pedidoId },
       {
-        $set:   { estado: EstadoSlot.DISPONIBLE },
+        $set: { estado: EstadoSlot.DISPONIBLE },
         $unset: { pedidoId: '', retenidoHasta: '' },
       },
     );

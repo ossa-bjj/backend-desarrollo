@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { User, UserStatus } from './user.model';
@@ -21,7 +21,8 @@ const LARGO_MINIMO_CONTRASENA = 6;
 // POST /api/users/register
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { username, email, password, profile, customer, sportsProfile, membership, membershipPayments } = req.body;
+    const { username, email, password, profile, customer, sportsProfile, membership, membershipPayments } =
+      req.body;
 
     const existingUser = await User.exists({ $or: [{ username }, { email }] });
     if (existingUser) {
@@ -92,9 +93,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await user.save();
 
     const token = generateToken({
-      id:       user._id.toString(),
+      id: user._id.toString(),
       username: user.username,
-      rol:      user.role,
+      rol: user.role,
     });
 
     res.status(200).json({
@@ -102,11 +103,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       data: {
         token,
         user: {
-          id:       user._id,
+          id: user._id,
           username: user.username,
-          email:    user.email,
-          role:     user.role,
-          status:   user.status,
+          email: user.email,
+          role: user.role,
+          status: user.status,
         },
       },
     });
@@ -154,14 +155,16 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email }).select('+metadata.resetPasswordToken +metadata.resetPasswordExpires');
+    const user = await User.findOne({ email }).select(
+      '+metadata.resetPasswordToken +metadata.resetPasswordExpires',
+    );
     if (!user) {
       res.status(200).json(respuestaNeutra);
       return;
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    user.metadata.resetPasswordToken   = token;
+    user.metadata.resetPasswordToken = token;
     user.metadata.resetPasswordExpires = new Date(Date.now() + 3_600_000);
     await user.save();
 
@@ -203,7 +206,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     }
 
     const user = await User.findOne({
-      'metadata.resetPasswordToken':   token,
+      'metadata.resetPasswordToken': token,
       'metadata.resetPasswordExpires': { $gt: new Date() },
     }).select('+metadata.resetPasswordToken +metadata.resetPasswordExpires +password');
 
@@ -212,8 +215,8 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    user.password                      = newPassword;
-    user.metadata.resetPasswordToken   = undefined;
+    user.password = newPassword;
+    user.metadata.resetPasswordToken = undefined;
     user.metadata.resetPasswordExpires = undefined;
     await user.save();
 
