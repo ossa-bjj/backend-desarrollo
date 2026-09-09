@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { CustomerOrigin, User } from './user.model';
-import { sendServerError, esDuenoOAdmin } from '../shared/controller.utils';
+import { sendServerError, esDuenoOAdmin, leerObjectId } from '../shared/controller.utils';
 
 // PATCH /api/users/:id/customer
 export const updateCustomer = async (req: Request, res: Response): Promise<void> => {
@@ -9,10 +9,7 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
     const { id } = req.params;
     const { isCustomer, origin, since } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (origin && !Object.values(CustomerOrigin).includes(origin)) {
       res.status(400).json({ error: 'Origen no válido' });
@@ -32,7 +29,7 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
     const user = await User.findByIdAndUpdate(
       id,
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -52,10 +49,7 @@ export const updateSportsProfile = async (req: Request, res: Response): Promise<
     const { id } = req.params;
     const { isAthlete, isFederated, licenseNumber, federationName, clubName } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     const update: Record<string, unknown> = {};
     if (isAthlete !== undefined) update['sportsProfile.isAthlete'] = isAthlete;
@@ -72,7 +66,7 @@ export const updateSportsProfile = async (req: Request, res: Response): Promise<
     const user = await User.findByIdAndUpdate(
       id,
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -91,16 +85,11 @@ export const removeSportsProfile = async (req: Request, res: Response): Promise<
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { $unset: { sportsProfile: '' } },
-      { new: true }
-    ).select('-password');
+    const user = await User.findByIdAndUpdate(id, { $unset: { sportsProfile: '' } }, { new: true }).select(
+      '-password',
+    );
 
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
@@ -118,10 +107,7 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de usuario no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'usuario')) return;
 
     if (!esDuenoOAdmin(req, id)) {
       res.status(403).json({ error: 'No tienes permisos para añadir direcciones a este usuario' });
@@ -131,7 +117,7 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
     const user = await User.findByIdAndUpdate(
       id,
       { $push: { 'profile.addresses': req.body } },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -177,7 +163,7 @@ export const updateAddress = async (req: Request, res: Response): Promise<void> 
     const user = await User.findOneAndUpdate(
       { _id: id, 'profile.addresses._id': addressId },
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {
@@ -209,7 +195,7 @@ export const removeAddress = async (req: Request, res: Response): Promise<void> 
     const user = await User.findByIdAndUpdate(
       id,
       { $pull: { 'profile.addresses': { _id: addressId } } },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select('-password');
 
     if (!user) {

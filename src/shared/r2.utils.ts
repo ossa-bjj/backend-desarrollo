@@ -1,5 +1,5 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import type { Readable } from "node:stream";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
 
 const getR2Client = () => {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -7,11 +7,11 @@ const getR2Client = () => {
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
 
   if (!accountId || !accessKeyId || !secretAccessKey) {
-    throw new Error("Faltan credenciales de Cloudflare R2 en las variables de entorno");
+    throw new Error('Faltan credenciales de Cloudflare R2 en las variables de entorno');
   }
 
   return new S3Client({
-    region: "auto",
+    region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: {
       accessKeyId,
@@ -34,10 +34,10 @@ const getR2Client = () => {
  * borrados pasarian a fallar en silencio, dejando huerfanos en el bucket.
  */
 export const keyFromPublicUrl = (urlOrKey: string): string => {
-  if (!urlOrKey) return "";
+  if (!urlOrKey) return '';
 
   if (!/^https?:\/\//i.test(urlOrKey)) {
-    return urlOrKey.replace(/^\/+/, "");
+    return urlOrKey.replace(/^\/+/, '');
   }
 
   let pathname: string;
@@ -48,17 +48,43 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
   }
 
   // El proxy de imagenes cuelga de /api/media; los dominios publicos de R2 no.
-  return pathname.replace(/^\/api\/media\//, "/").replace(/^\/+/, "");
+  return pathname.replace(/^\/api\/media\//, '/').replace(/^\/+/, '');
+};
+
+/**
+ * Distingue lo que vive en nuestro bucket de lo que apunta a un sitio ajeno.
+ *
+ * Hace falta porque en el mismo campo pueden convivir las dos cosas: la portada
+ * de una noticia guardada hoy es una key nuestra, pero las de antes son enlaces
+ * externos que alguien pego. Normalizar un enlace externo lo destroza
+ * —`keyFromPublicUrl` le quita el dominio y deja una ruta que no existe—, asi
+ * que hay que preguntar antes de tocarlo.
+ */
+export const esReferenciaDeNuestroAlmacen = (valor: string): boolean => {
+  if (!valor) return false;
+
+  // Sin protocolo solo puede ser una key del bucket.
+  if (!/^https?:\/\//i.test(valor)) return true;
+
+  const dominioPublico = (process.env.R2_PUBLIC_DOMAIN ?? '').replace(/\/+$/, '').toLowerCase();
+
+  return (
+    (dominioPublico !== '' && valor.toLowerCase().startsWith(dominioPublico)) ||
+    // Formas heredadas de otros entornos: el proxy de medios y el dominio
+    // directo del bucket.
+    /\/api\/media\//i.test(valor) ||
+    /\.r2\.dev\//i.test(valor)
+  );
 };
 
 /** Construye la URL publica del entorno actual para una key del bucket. */
 export const publicUrlFromKey = (key: string): string => {
-  if (!key) return "";
+  if (!key) return '';
 
-  const publicDomain = process.env.R2_PUBLIC_DOMAIN || "";
+  const publicDomain = process.env.R2_PUBLIC_DOMAIN || '';
   if (!publicDomain) return key;
 
-  const cleanDomain = publicDomain.endsWith("/") ? publicDomain.slice(0, -1) : publicDomain;
+  const cleanDomain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
   return `${cleanDomain}/${key}`;
 };
 
@@ -67,8 +93,7 @@ export const publicUrlFromKey = (key: string): string => {
  * Sirve tanto para las keys nuevas como para las URLs absolutas heredadas, y
  * evita tener que migrar la base de datos para cambiar de dominio.
  */
-export const normalizarUrlMedia = (urlOrKey: string): string =>
-  publicUrlFromKey(keyFromPublicUrl(urlOrKey));
+export const normalizarUrlMedia = (urlOrKey: string): string => publicUrlFromKey(keyFromPublicUrl(urlOrKey));
 
 /**
  * Sube el fichero y devuelve la KEY, no la URL. Guardar la URL absoluta
@@ -81,12 +106,12 @@ export const uploadToR2 = async (
   mimeType: string,
   keyFija?: string,
 ): Promise<string> => {
-  const bucketName = process.env.R2_BUCKET_NAME || "assets";
+  const bucketName = process.env.R2_BUCKET_NAME || 'assets';
   const s3Client = getR2Client();
 
   // Con keyFija el objeto se sobrescribe en vez de acumular una copia por
   // subida. Lo usa la semilla para no dejar huerfanos en cada ejecucion.
-  const key = keyFija ?? `uploads/${Date.now()}-${fileName.replace(/\s+/g, "_")}`;
+  const key = keyFija ?? `uploads/${Date.now()}-${fileName.replace(/\s+/g, '_')}`;
 
   const command = new PutObjectCommand({
     Bucket: bucketName,
@@ -101,7 +126,7 @@ export const uploadToR2 = async (
 };
 
 export const deleteFromR2 = async (key: string): Promise<void> => {
-  const bucketName = process.env.R2_BUCKET_NAME || "assets";
+  const bucketName = process.env.R2_BUCKET_NAME || 'assets';
   const s3Client = getR2Client();
 
   const command = new DeleteObjectCommand({
@@ -113,7 +138,7 @@ export const deleteFromR2 = async (key: string): Promise<void> => {
 };
 
 export const getFromR2 = async (key: string): Promise<{ stream: Readable; contentType: string }> => {
-  const bucketName = process.env.R2_BUCKET_NAME || "assets";
+  const bucketName = process.env.R2_BUCKET_NAME || 'assets';
   const s3Client = getR2Client();
 
   const command = new GetObjectCommand({
@@ -124,6 +149,6 @@ export const getFromR2 = async (key: string): Promise<{ stream: Readable; conten
   const response = await s3Client.send(command);
   return {
     stream: response.Body as Readable,
-    contentType: response.ContentType || "application/octet-stream",
+    contentType: response.ContentType || 'application/octet-stream',
   };
 };

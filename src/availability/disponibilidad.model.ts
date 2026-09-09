@@ -1,9 +1,10 @@
-import { Schema, model, Types } from 'mongoose';
+import type { Types } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 export enum EstadoSlot {
   DISPONIBLE = 'disponible',
-  OCUPADO    = 'ocupado',
-  BLOQUEADO  = 'bloqueado',
+  OCUPADO = 'ocupado',
+  BLOQUEADO = 'bloqueado',
 }
 
 export interface IDisponibilidad {
@@ -34,42 +35,42 @@ export const PATRON_HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DisponibilidadSchema = new Schema<IDisponibilidad>(
   {
     servicio: {
-      type:     Number,
+      type: Number,
       required: [true, 'El servicio es obligatorio'],
-      index:    true,
+      index: true,
     },
     fecha: {
-      type:     Date,
+      type: Date,
       required: [true, 'La fecha es obligatoria'],
-      index:    true,
+      index: true,
     },
     horaInicio: {
-      type:     String,
+      type: String,
       required: [true, 'La hora de inicio es obligatoria'],
-      match:    [PATRON_HORA, 'La hora de inicio debe tener formato HH:MM'],
+      match: [PATRON_HORA, 'La hora de inicio debe tener formato HH:MM'],
     },
     horaFin: {
-      type:     String,
+      type: String,
       required: [true, 'La hora de fin es obligatoria'],
-      match:    [PATRON_HORA, 'La hora de fin debe tener formato HH:MM'],
+      match: [PATRON_HORA, 'La hora de fin debe tener formato HH:MM'],
     },
     duracion: {
-      type:     Number,
+      type: Number,
       required: [true, 'La duracion es obligatoria'],
-      min:      [1, 'La duracion debe ser de al menos 1 minuto'],
+      min: [1, 'La duracion debe ser de al menos 1 minuto'],
     },
     estado: {
-      type:    String,
-      enum:    Object.values(EstadoSlot),
+      type: String,
+      enum: Object.values(EstadoSlot),
       default: EstadoSlot.DISPONIBLE,
-      index:   true,
+      index: true,
     },
     pedidoId: {
       type: Schema.Types.ObjectId,
-      ref:  'Order',
+      ref: 'Order',
     },
     retenidoHasta: {
-      type:  Date,
+      type: Date,
       index: true,
     },
     nota: {
@@ -85,9 +86,6 @@ const DisponibilidadSchema = new Schema<IDisponibilidad>(
 
 // Un servicio no puede tener dos slots que arranquen a la misma hora el mismo dia.
 // Es lo que hace idempotente la generacion por lotes.
-DisponibilidadSchema.index(
-  { servicio: 1, fecha: 1, horaInicio: 1 },
-  { unique: true },
-);
+DisponibilidadSchema.index({ servicio: 1, fecha: 1, horaInicio: 1 }, { unique: true });
 
 export const DisponibilidadModelo = model<IDisponibilidad>('Disponibilidad', DisponibilidadSchema);

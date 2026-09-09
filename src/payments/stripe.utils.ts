@@ -29,12 +29,6 @@ export const getWebhookSecret = (): string => {
   return secret;
 };
 
-/**
- * Stripe trabaja en la unidad minima de la moneda: para euros, centimos enteros.
- * Mandar decimales provoca importes silenciosamente equivocados.
- */
-export const aCentimos = (euros: number): number => Math.round(euros * 100);
-
 export const MONEDA = 'eur';
 
 /** Estados de un PaymentIntent que todavia admiten que el cliente pague. */

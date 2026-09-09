@@ -45,3 +45,6 @@ coverage/
 .agents/
 .atl/
 .wrangler/
+
+# Semilla de datos de ejemplo: herramienta local, no viaja al repositorio
+seed.ts

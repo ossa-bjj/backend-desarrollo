@@ -1,0 +1,21 @@
+# Saltos de linea: LF siempre, tambien en el disco de Windows.
+#
+# Sin esto, `core.autocrlf=true` reescribe los ficheros con CRLF cada vez que
+# git los toca —un pull, un checkout, un merge—, y el repositorio acaba con dos
+# formatos mezclados segun quien haya tocado cada fichero por ultima vez. Eso
+# ensucia los diffs con cambios que no cambian nada, y el codigo se despliega
+# en Linux, donde el salto es LF.
+#
+# `text=auto` deja que git decida que es texto y que es binario; `eol=lf` fija
+# el salto de linea en el area de trabajo, y no solo dentro del repositorio.
+* text=auto eol=lf
+
+# Binarios: que git no los toque ni intente calcular diffs de texto.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.avif binary
+*.ico  binary
+*.pdf  binary

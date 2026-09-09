@@ -1,63 +1,53 @@
-import { Request, Response } from 'express';
-import { isValidObjectId, Types } from 'mongoose';
+import type { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { Order, OrderStatus, OrderItemTipo, identidadLinea } from './order.model';
-import { ProductoModelo } from '../products/producto.model';
-import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
-import { normalizarUrlMedia } from '../shared/r2.utils';
+import { reembolsarPedido, type ResultadoReembolso } from '../payments/reembolso.service';
 import {
   retenerSlots,
   liberarSlotsDePedido,
+  liberarSlot,
   consolidarSlotsDePedido,
   reasignarSlot,
 } from '../availability/disponibilidad.service';
-import { sendServerError, esAdmin, esDuenoOAdmin } from '../shared/controller.utils';
-
-// Linea de pedido tal y como la envia el cliente: solo dice QUE quiere y CUANTO.
-// El precio nunca viaja en la peticion, se resuelve contra el catalogo.
-interface LineaPedidoInput {
-  codigoArticulo: unknown;
-  quantity:       unknown;
-  slotId?:        unknown;
-  slotLabel?:     unknown;
-}
-
-// Entrada del catalogo ya normalizada, sea producto o servicio.
-interface EntradaCatalogo {
-  name:      string;
-  price:     number;
-  image?:    string;
-  tipo:      OrderItemTipo;
-  // Tope de unidades vendibles: stock en productos, plazas en servicios.
-  maximo:    number;
-  etiqueta:  string;
-  // Si alguna linea lo pide, el pedido entero pasa por confirmacion previa.
-  requiereConfirmacion: boolean;
-}
+import { leerCriteriosPedido, listarPedidos, prepararPedido } from './order.service';
+import {
+  sendServerError,
+  esAdmin,
+  esDuenoOAdmin,
+  leerObjectId,
+  noEncontrado,
+  peticionInvalida,
+  conflicto,
+  sinPermiso,
+} from '../shared/controller.utils';
+import { redondearEuros } from '../shared/dinero';
 
 // Ajuste que el admin aplica a una linea al confirmar el presupuesto.
 interface AjusteLinea {
   codigoArticulo: unknown;
   /** Horario original de la linea: junto al codigo la identifica de forma unica. */
   slotOriginalId?: unknown;
-  price?:         unknown;
-  quantity?:      unknown;
-  motivoAjuste?:  unknown;
-  slotId?:        string;
-  slotLabel?:     unknown;
+  price?: unknown;
+  quantity?: unknown;
+  motivoAjuste?: unknown;
+  slotId?: string;
+  slotLabel?: unknown;
 }
 
-const esCodigoDeServicio = (codigo: number): boolean =>
-  codigo >= CODIGO_SERVICIO_MIN && codigo <= CODIGO_SERVICIO_MAX;
-
-const redondearEuros = (valor: number): number => Math.round(valor * 100) / 100;
-
-// GET /api/pedidos
+// GET /api/pedidos?status=&usuario=&desde=&hasta=&pagina=&limite=
+// Quien no es admin queda acotado a sus propios pedidos: el filtro de usuario
+// lo impone el servidor con la identidad del token, no la query.
 export const getOrders = async (req: Request, res: Response): Promise<void> => {
   try {
-    const filter = esAdmin(req) ? {} : { user: req.user!.id };
-    const orders = await Order.find(filter).sort({ createdAt: -1 }).populate('user', 'username email');
+    const lectura = leerCriteriosPedido(req.query, esAdmin(req), req.user!.id);
+    if (!lectura.ok) {
+      peticionInvalida(res, lectura.error);
+      return;
+    }
 
-    res.status(200).json({ success: true, data: orders });
+    const { pedidos, total, pagina, limite } = await listarPedidos(lectura.criterios);
+
+    res.status(200).json({ success: true, data: pedidos, meta: { total, pagina, limite } });
   } catch (error) {
     sendServerError(res, 'Error obteniendo pedidos', error);
   }
@@ -68,19 +58,16 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de pedido no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'pedido')) return;
 
     const order = await Order.findById(id).populate('user', 'username email');
     if (!order) {
-      res.status(404).json({ error: 'Pedido no encontrado' });
+      noEncontrado(res, 'Pedido');
       return;
     }
 
     if (!esDuenoOAdmin(req, order.user)) {
-      res.status(403).json({ error: 'No tienes permisos para ver este pedido' });
+      sinPermiso(res, 'No tienes permisos para ver este pedido');
       return;
     }
 
@@ -100,139 +87,23 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     const { items, shippingAddress, user } = req.body;
     const userId = esAdmin(req) && user ? user : req.user!.id;
 
-    if (!Array.isArray(items) || items.length === 0) {
-      res.status(400).json({ error: 'El pedido debe incluir al menos una linea' });
+    const preparado = await prepararPedido(items);
+    if (!preparado.ok) {
+      res.status(preparado.estado).json({ error: preparado.error });
       return;
     }
-
-    const lineas = items as LineaPedidoInput[];
-
-    // --- Validacion de forma antes de tocar la base de datos ---
-    const codigos: number[] = [];
-    for (const linea of lineas) {
-      const codigo = Number(linea.codigoArticulo);
-      if (!Number.isInteger(codigo)) {
-        res.status(400).json({ error: `Codigo de articulo no valido: ${String(linea.codigoArticulo)}` });
-        return;
-      }
-      codigos.push(codigo);
-    }
-
-    // Dos sesiones del mismo servicio a distinta hora son dos lineas legitimas.
-    // Lo que no se admite es repetir exactamente la misma combinacion.
-    const claves = lineas.map((linea, i) =>
-      identidadLinea(codigos[i], typeof linea.slotId === 'string' ? linea.slotId : undefined));
-
-    if (new Set(claves).size !== claves.length) {
-      res.status(400).json({ error: 'El pedido repite el mismo articulo y horario dos veces' });
-      return;
-    }
-
-    // --- Resolucion del catalogo: los servicios viven en su propia coleccion ---
-    const codigosServicio = codigos.filter(esCodigoDeServicio);
-    const codigosProducto = codigos.filter((codigo) => !esCodigoDeServicio(codigo));
-
-    const [productos, servicios] = await Promise.all([
-      codigosProducto.length
-        ? ProductoModelo.find({ codigoArticulo: { $in: codigosProducto } })
-        : Promise.resolve([]),
-      codigosServicio.length
-        ? ServicioModelo.find({ codigoArticulo: { $in: codigosServicio } })
-        : Promise.resolve([]),
-    ]);
-
-    const catalogo = new Map<number, EntradaCatalogo>();
-
-    for (const producto of productos) {
-      catalogo.set(producto.codigoArticulo, {
-        name:     producto.name,
-        price:    producto.price,
-        image:    normalizarUrlMedia(producto.imagenes?.[0] ?? ''),
-        tipo:     OrderItemTipo.PRODUCTO,
-        maximo:   producto.stock,
-        etiqueta: 'unidades en stock',
-        requiereConfirmacion: false,
-      });
-    }
-
-    for (const servicio of servicios) {
-      // Un servicio desactivado deja de venderse, aunque siga en carritos antiguos.
-      if (!servicio.activo) continue;
-      catalogo.set(servicio.codigoArticulo, {
-        name:     servicio.nombre,
-        price:    servicio.precio,
-        image:    normalizarUrlMedia(servicio.imagenes?.[0] ?? ''),
-        tipo:     OrderItemTipo.SERVICIO,
-        maximo:   servicio.plazas,
-        etiqueta: 'plazas disponibles',
-        requiereConfirmacion: servicio.requiereConfirmacion,
-      });
-    }
-
-    // --- Construccion de las lineas definitivas ---
-    const itemsResueltos = [];
-    const unidadesPorArticulo = new Map<number, number>();
-    let total = 0;
-
-    for (let i = 0; i < lineas.length; i += 1) {
-      const linea = lineas[i];
-      const codigo = codigos[i];
-      const entrada = catalogo.get(codigo);
-
-      if (!entrada) {
-        res.status(400).json({ error: `El articulo ${codigo} no esta disponible` });
-        return;
-      }
-
-      const quantity = Number(linea.quantity);
-      if (!Number.isInteger(quantity) || quantity < 1) {
-        res.status(400).json({ error: `Cantidad no valida para el articulo ${codigo}` });
-        return;
-      }
-
-      // Con varias lineas del mismo articulo hay que sumar: tres reservas de una
-      // plaza agotan un servicio de tres plazas igual que una reserva de tres.
-      const acumulado = (unidadesPorArticulo.get(codigo) ?? 0) + quantity;
-      if (acumulado > entrada.maximo) {
-        res.status(409).json({
-          error: `Solo quedan ${entrada.maximo} ${entrada.etiqueta} de "${entrada.name}"`,
-        });
-        return;
-      }
-      unidadesPorArticulo.set(codigo, acumulado);
-
-      const esServicio = entrada.tipo === OrderItemTipo.SERVICIO;
-
-      itemsResueltos.push({
-        codigoArticulo: codigo,
-        name:           entrada.name,
-        quantity,
-        price:          entrada.price,
-        precioOriginal: entrada.price,
-        image:          entrada.image,
-        tipo:           entrada.tipo,
-        slotId:         esServicio && typeof linea.slotId === 'string' ? linea.slotId : undefined,
-        slotLabel:      esServicio && typeof linea.slotLabel === 'string' ? linea.slotLabel : undefined,
-      });
-
-      total += entrada.price * quantity;
-    }
-
-    // Un solo servicio marcado como presupuesto obliga a revisar el pedido entero:
-    // no tiene sentido cobrar la mitad y dejar la otra a la espera.
-    const necesitaConfirmacion = lineas.some((_, i) => catalogo.get(codigos[i])?.requiereConfirmacion);
 
     const order = await new Order({
       user: userId,
-      items: itemsResueltos,
-      total: redondearEuros(total),
+      items: preparado.items,
+      total: preparado.total,
       shippingAddress,
-      status: necesitaConfirmacion ? OrderStatus.PENDIENTE_CONFIRMACION : OrderStatus.PENDIENTE,
+      status: preparado.necesitaConfirmacion ? OrderStatus.PENDIENTE_CONFIRMACION : OrderStatus.PENDIENTE,
     }).save();
 
     // Los horarios se retienen contra el pedido ya creado. Si alguno se lo llevo
     // otro cliente mientras tanto, se anula el pedido en lugar de venderlo dos veces.
-    const slotIds = itemsResueltos
+    const slotIds = preparado.items
       .map((item) => item.slotId)
       .filter((id): id is string => typeof id === 'string');
 
@@ -241,9 +112,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       if (ocupados.length > 0) {
         await liberarSlotsDePedido(order._id);
         await order.deleteOne();
-        res.status(409).json({
-          error: 'Alguno de los horarios elegidos ya no esta disponible. Vuelve a elegir hora.',
-        });
+        conflicto(res, 'Alguno de los horarios elegidos ya no está disponible. Vuelve a elegir hora.');
         return;
       }
     }
@@ -261,19 +130,16 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 export const confirmOrder = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de pedido no valido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'pedido')) return;
 
     const order = await Order.findById(id);
     if (!order) {
-      res.status(404).json({ error: 'Pedido no encontrado' });
+      noEncontrado(res, 'Pedido');
       return;
     }
 
     if (order.status !== OrderStatus.PENDIENTE_CONFIRMACION) {
-      res.status(409).json({ error: 'Este pedido no esta pendiente de confirmacion' });
+      conflicto(res, 'Este pedido no está pendiente de confirmación');
       return;
     }
 
@@ -289,57 +155,112 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    let total = 0;
+    // --- 1. Emparejar cada linea con su ajuste y validarlo, sin tocar nada ---
+    // El emparejamiento se hace aqui, mientras los horarios siguen siendo los
+    // originales, que es por lo que estan indexados los ajustes. Y se valida
+    // todo antes de escribir: un precio invalido en la ultima linea no puede
+    // dejar movido el horario de la primera, con la agenda escrita y el pedido no.
+    const ajustePorLinea = new Map<(typeof order.items)[number], AjusteLinea>();
 
     for (const item of order.items) {
       const ajuste = ajustes.get(identidadLinea(item.codigoArticulo, item.slotId));
+      if (!ajuste) continue;
+      ajustePorLinea.set(item, ajuste);
+
+      if (ajuste.price !== undefined) {
+        const precio = Number(ajuste.price);
+        if (!Number.isFinite(precio) || precio < 0) {
+          peticionInvalida(res, `Precio no válido para el artículo ${item.codigoArticulo}`);
+          return;
+        }
+      }
+
+      if (ajuste.quantity !== undefined) {
+        const cantidad = Number(ajuste.quantity);
+        if (!Number.isInteger(cantidad) || cantidad < 1) {
+          peticionInvalida(res, `Cantidad no válida para el artículo ${item.codigoArticulo}`);
+          return;
+        }
+      }
+    }
+
+    // --- 2. Mover los horarios, anotando lo hecho para poder deshacerlo ---
+    // Es el unico paso que escribe fuera del pedido, y puede fallar a mitad:
+    // que otro cliente se quede el hueco es una carrera normal, no un error.
+    const movidos: Array<{ item: (typeof order.items)[number]; anterior?: string }> = [];
+
+    const deshacerMovimientos = async (): Promise<void> => {
+      for (const { item, anterior } of movidos.reverse()) {
+        if (anterior) {
+          const vuelto = await reasignarSlot(order._id, item.slotId, anterior);
+          // Si otro cliente se ha quedado el hueco de origen en el intervalo, la
+          // vuelta atras no es posible. No hay nada que hacer desde aqui, pero
+          // no puede quedar invisible: es una reserva que hay que revisar a mano.
+          if (!vuelto) {
+            console.error(
+              `No se pudo devolver el horario ${anterior} al pedido ${order._id}: ` +
+                `la linea ${item.codigoArticulo} se queda sin su hueco original.`,
+            );
+          }
+        } else if (item.slotId) {
+          // La linea no tenia horario antes: el nuevo se suelta sin mas.
+          await liberarSlot(order._id, item.slotId);
+        }
+        item.slotId = anterior;
+      }
+    };
+
+    for (const [item, ajuste] of ajustePorLinea) {
+      // Cambio de horario: solo tiene sentido en lineas de servicio.
+      if (!ajuste.slotId || item.tipo !== OrderItemTipo.SERVICIO || ajuste.slotId === item.slotId) {
+        continue;
+      }
+
+      const anterior = item.slotId;
+      const reasignado = await reasignarSlot(order._id, anterior, ajuste.slotId);
+      if (!reasignado) {
+        await deshacerMovimientos();
+        conflicto(res, `El horario elegido para "${item.name}" ya no está disponible`);
+        return;
+      }
+
+      item.slotId = ajuste.slotId;
+      item.slotLabel = typeof ajuste.slotLabel === 'string' ? ajuste.slotLabel : item.slotLabel;
+      movidos.push({ item, anterior });
+    }
+
+    // --- 3. Aplicar precios y cantidades, ya sin nada que pueda fallar ---
+    let total = 0;
+
+    for (const item of order.items) {
+      const ajuste = ajustePorLinea.get(item);
 
       if (ajuste) {
-        if (ajuste.price !== undefined) {
-          const precio = Number(ajuste.price);
-          if (!Number.isFinite(precio) || precio < 0) {
-            res.status(400).json({ error: `Precio no valido para el articulo ${item.codigoArticulo}` });
-            return;
-          }
-          item.price = redondearEuros(precio);
-        }
-
-        if (ajuste.quantity !== undefined) {
-          const cantidad = Number(ajuste.quantity);
-          if (!Number.isInteger(cantidad) || cantidad < 1) {
-            res.status(400).json({ error: `Cantidad no valida para el articulo ${item.codigoArticulo}` });
-            return;
-          }
-          item.quantity = cantidad;
-        }
-
+        if (ajuste.price !== undefined) item.price = redondearEuros(Number(ajuste.price));
+        if (ajuste.quantity !== undefined) item.quantity = Number(ajuste.quantity);
         if (typeof ajuste.motivoAjuste === 'string') {
           item.motivoAjuste = ajuste.motivoAjuste.trim() || undefined;
-        }
-
-        // Cambio de horario: solo tiene sentido en lineas de servicio.
-        if (ajuste.slotId && item.tipo === OrderItemTipo.SERVICIO && ajuste.slotId !== item.slotId) {
-          const reasignado = await reasignarSlot(order._id, item.slotId, ajuste.slotId);
-          if (!reasignado) {
-            res.status(409).json({
-              error: `El horario elegido para "${item.name}" ya no esta disponible`,
-            });
-            return;
-          }
-          item.slotId    = ajuste.slotId;
-          item.slotLabel = typeof ajuste.slotLabel === 'string' ? ajuste.slotLabel : item.slotLabel;
         }
       }
 
       total += item.price * item.quantity;
     }
 
-    order.total         = redondearEuros(total);
-    order.status        = OrderStatus.PENDIENTE;
-    order.confirmadoEn  = new Date();
+    order.total = redondearEuros(total);
+    order.status = OrderStatus.PENDIENTE;
+    order.confirmadoEn = new Date();
     order.confirmadoPor = req.user?.id ? new Types.ObjectId(req.user.id) : undefined;
     order.motivoRechazo = undefined;
-    await order.save();
+
+    try {
+      await order.save();
+    } catch (error) {
+      // Guardar es lo ultimo que puede fallar, y si falla los horarios ya estan
+      // movidos: hay que devolverlos antes de propagar, o la agenda quedaria
+      // reflejando una confirmacion que no llego a existir.
+      await deshacerMovimientos();
+      throw error;
+    }
 
     // La reserva deja de ser provisional: ya no caduca sola.
     await consolidarSlotsDePedido(order._id);
@@ -355,29 +276,26 @@ export const confirmOrder = async (req: Request, res: Response): Promise<void> =
 export const rejectOrder = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de pedido no valido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'pedido')) return;
 
     const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
     if (!motivo) {
-      res.status(400).json({ error: 'Indica el motivo del rechazo' });
+      peticionInvalida(res, 'Indica el motivo del rechazo');
       return;
     }
 
     const order = await Order.findById(id);
     if (!order) {
-      res.status(404).json({ error: 'Pedido no encontrado' });
+      noEncontrado(res, 'Pedido');
       return;
     }
 
     if (order.status !== OrderStatus.PENDIENTE_CONFIRMACION) {
-      res.status(409).json({ error: 'Solo se puede rechazar un pedido pendiente de confirmacion' });
+      conflicto(res, 'Solo se puede rechazar un pedido pendiente de confirmación');
       return;
     }
 
-    order.status        = OrderStatus.RECHAZADO;
+    order.status = OrderStatus.RECHAZADO;
     order.motivoRechazo = motivo;
     await order.save();
 
@@ -398,26 +316,36 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de pedido no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'pedido')) return;
 
     if (!Object.values(OrderStatus).includes(status)) {
-      res.status(400).json({ error: 'Estado de pedido no válido' });
+      peticionInvalida(res, 'Estado de pedido no válido');
       return;
     }
 
-    const order = await Order.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true },
-    ).populate('user', 'username email');
+    const order = await Order.findById(id).populate('user', 'username email');
 
     if (!order) {
-      res.status(404).json({ error: 'Pedido no encontrado' });
+      noEncontrado(res, 'Pedido');
       return;
     }
+
+    // Cancelar un pedido YA COBRADO tiene que devolver el dinero, y hay que
+    // hacerlo antes de cambiar el estado: si el reembolso falla, el pedido se
+    // queda como estaba en vez de figurar cancelado con el importe retenido.
+    const hayQueDevolver = status === OrderStatus.CANCELADO && order.status === OrderStatus.PAGADO;
+    let reembolso: ResultadoReembolso | null = null;
+
+    if (hayQueDevolver) {
+      reembolso = await reembolsarPedido(order);
+      if (!reembolso.ok) {
+        conflicto(res, `No se pudo reembolsar el pedido: ${reembolso.motivo}`);
+        return;
+      }
+    }
+
+    order.status = status;
+    await order.save();
 
     // Cancelar o rechazar devuelve los horarios al catalogo; cobrar los consolida.
     if (status === OrderStatus.CANCELADO || status === OrderStatus.RECHAZADO) {
@@ -426,7 +354,11 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       await consolidarSlotsDePedido(order._id);
     }
 
-    res.status(200).json({ success: true, data: order });
+    res.status(200).json({
+      success: true,
+      data: order,
+      ...(reembolso?.ok ? { message: `Importe devuelto (${reembolso.reembolsoId})` } : {}),
+    });
   } catch (error) {
     sendServerError(res, 'Error actualizando estado del pedido', error);
   }
@@ -437,14 +369,11 @@ export const deleteOrder = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
 
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de pedido no válido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'pedido')) return;
 
     const order = await Order.findByIdAndDelete(id);
     if (!order) {
-      res.status(404).json({ error: 'Pedido no encontrado' });
+      noEncontrado(res, 'Pedido');
       return;
     }
 

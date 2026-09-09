@@ -17,10 +17,10 @@ const router = Router();
 router.get('/', optionalAuth, getDisponibilidad);
 
 // --- RUTAS PROTEGIDAS ---
-router.post('/',                   isAuth, isAdmin, crearDisponibilidad);
-router.post('/batch',              isAuth, isAdmin, generarDisponibilidad);
-router.patch('/:id/bloquear',      isAuth, isAdmin, bloquearDisponibilidad);
-router.patch('/:id/desbloquear',   isAuth, isAdmin, desbloquearDisponibilidad);
-router.delete('/:id',              isAuth, isAdmin, eliminarDisponibilidad);
+router.post('/', isAuth, isAdmin, crearDisponibilidad);
+router.post('/batch', isAuth, isAdmin, generarDisponibilidad);
+router.patch('/:id/bloquear', isAuth, isAdmin, bloquearDisponibilidad);
+router.patch('/:id/desbloquear', isAuth, isAdmin, desbloquearDisponibilidad);
+router.delete('/:id', isAuth, isAdmin, eliminarDisponibilidad);
 
 export default router;

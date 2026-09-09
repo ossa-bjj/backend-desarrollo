@@ -1,14 +1,12 @@
-import { Request, Response } from 'express';
-import { isValidObjectId } from 'mongoose';
+import type { Request, Response } from 'express';
 import { DisponibilidadModelo, EstadoSlot, PATRON_HORA } from './disponibilidad.model';
 import { ServicioModelo } from '../services/servicio.model';
 import { liberarRetencionesCaducadas } from './disponibilidad.service';
-import { sendServerError, esAdmin } from '../shared/controller.utils';
+import { sendServerError, esAdmin, leerObjectId } from '../shared/controller.utils';
 
 const MINUTOS_POR_DIA = 24 * 60;
 
-const soloTexto = (valor: unknown): string | undefined =>
-  typeof valor === 'string' ? valor : undefined;
+const soloTexto = (valor: unknown): string | undefined => (typeof valor === 'string' ? valor : undefined);
 
 /** Convierte "HH:MM" a minutos desde medianoche. Devuelve null si no es valido. */
 const horaAMinutos = (hora: string): number | null => {
@@ -69,15 +67,16 @@ export const getDisponibilidad = async (req: Request, res: Response): Promise<vo
 
     const filtro: Record<string, unknown> = {
       servicio,
-      fecha: { $gte: vistaAdmin ? desde : new Date(Math.max(desde.getTime(), hoyUtc().getTime())), $lte: hasta },
+      fecha: {
+        $gte: vistaAdmin ? desde : new Date(Math.max(desde.getTime(), hoyUtc().getTime())),
+        $lte: hasta,
+      },
     };
 
     // El publico solo ve lo que puede reservar; el admin ve tambien ocupados y bloqueados.
     if (!vistaAdmin) filtro.estado = EstadoSlot.DISPONIBLE;
 
-    const slots = await DisponibilidadModelo
-      .find(filtro)
-      .sort({ fecha: 1, horaInicio: 1 });
+    const slots = await DisponibilidadModelo.find(filtro).sort({ fecha: 1, horaInicio: 1 });
 
     res.status(200).json({ success: true, data: slots });
   } catch (error) {
@@ -92,14 +91,14 @@ export const crearDisponibilidad = async (req: Request, res: Response): Promise<
 
     const dia = fechaUtc(String(fecha ?? ''));
     if (!Number.isInteger(Number(servicio)) || !dia) {
-      res.status(400).json({ error: 'Se requieren "servicio" y "fecha" (YYYY-MM-DD) validos' });
+      res.status(400).json({ error: 'Se requieren "servicio" y "fecha" (YYYY-MM-DD) válidos' });
       return;
     }
 
     const inicio = horaAMinutos(String(horaInicio ?? ''));
-    const fin    = horaAMinutos(String(horaFin ?? ''));
+    const fin = horaAMinutos(String(horaFin ?? ''));
     if (inicio === null || fin === null || fin <= inicio) {
-      res.status(400).json({ error: 'Horario no valido: "horaFin" debe ser posterior a "horaInicio"' });
+      res.status(400).json({ error: 'Horario no válido: "horaFin" debe ser posterior a "horaInicio"' });
       return;
     }
 
@@ -110,13 +109,13 @@ export const crearDisponibilidad = async (req: Request, res: Response): Promise<
     }
 
     const slot = await new DisponibilidadModelo({
-      servicio:   Number(servicio),
-      fecha:      dia,
+      servicio: Number(servicio),
+      fecha: dia,
       horaInicio: minutosAHora(inicio),
-      horaFin:    minutosAHora(fin),
-      duracion:   Number(duracion) || (fin - inicio),
-      estado:     estado ?? EstadoSlot.DISPONIBLE,
-      nota:       soloTexto(nota),
+      horaFin: minutosAHora(fin),
+      duracion: Number(duracion) || fin - inicio,
+      estado: estado ?? EstadoSlot.DISPONIBLE,
+      nota: soloTexto(nota),
     }).save();
 
     res.status(201).json({ success: true, data: slot });
@@ -140,10 +139,10 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
 
     const codigoServicio = Number(servicio);
     const inicioRango = fechaUtc(String(desde ?? ''));
-    const finRango    = fechaUtc(String(hasta ?? ''));
+    const finRango = fechaUtc(String(hasta ?? ''));
 
     if (!Number.isInteger(codigoServicio) || !inicioRango || !finRango) {
-      res.status(400).json({ error: 'Se requieren "servicio", "desde" y "hasta" validos' });
+      res.status(400).json({ error: 'Se requieren "servicio", "desde" y "hasta" válidos' });
       return;
     }
     if (inicioRango > finRango) {
@@ -152,9 +151,9 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
     }
 
     const minutoInicio = horaAMinutos(String(horaInicio ?? ''));
-    const minutoFin    = horaAMinutos(String(horaFin ?? ''));
+    const minutoFin = horaAMinutos(String(horaFin ?? ''));
     if (minutoInicio === null || minutoFin === null || minutoFin <= minutoInicio) {
-      res.status(400).json({ error: 'Horario no valido: "horaFin" debe ser posterior a "horaInicio"' });
+      res.status(400).json({ error: 'Horario no válido: "horaFin" debe ser posterior a "horaInicio"' });
       return;
     }
 
@@ -162,11 +161,11 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
       res.status(400).json({ error: 'Selecciona al menos un dia de la semana' });
       return;
     }
-    const dias = new Set(
-      diasSemana.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
-    );
+    const dias = new Set(diasSemana.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6));
     if (dias.size === 0) {
-      res.status(400).json({ error: 'Dias de la semana no validos: se esperan enteros de 0 (lunes) a 6 (domingo)' });
+      res
+        .status(400)
+        .json({ error: 'Días de la semana no válidos: se esperan enteros de 0 (lunes) a 6 (domingo)' });
       return;
     }
 
@@ -180,11 +179,13 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
     // los slots generados encajen con lo que dura de verdad una sesion.
     const paso = Number(duracion) > 0 ? Number(duracion) : servicioDoc.duracion;
     if (paso <= 0 || paso > MINUTOS_POR_DIA) {
-      res.status(400).json({ error: 'Duracion de slot no valida' });
+      res.status(400).json({ error: 'Duración de slot no válida' });
       return;
     }
     if (minutoFin - minutoInicio < paso) {
-      res.status(400).json({ error: `La franja horaria es mas corta que la duracion del slot (${paso} min)` });
+      res
+        .status(400)
+        .json({ error: `La franja horaria es más corta que la duración del slot (${paso} min)` });
       return;
     }
 
@@ -199,9 +200,9 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
 
       for (let minuto = minutoInicio; minuto + paso <= minutoFin; minuto += paso) {
         candidatos.push({
-          fecha:      new Date(dia),
+          fecha: new Date(dia),
           horaInicio: minutosAHora(minuto),
-          horaFin:    minutosAHora(minuto + paso),
+          horaFin: minutosAHora(minuto + paso),
         });
       }
     }
@@ -215,7 +216,7 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
     const existentes = await DisponibilidadModelo.find(
       {
         servicio: codigoServicio,
-        fecha:    { $gte: inicioRango, $lte: finRango },
+        fecha: { $gte: inicioRango, $lte: finRango },
       },
       { fecha: 1, horaInicio: 1 },
     );
@@ -228,19 +229,20 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
     if (nuevos.length > 0) {
       await DisponibilidadModelo.insertMany(
         nuevos.map((c) => ({
-          servicio:   codigoServicio,
-          fecha:      c.fecha,
+          servicio: codigoServicio,
+          fecha: c.fecha,
           horaInicio: c.horaInicio,
-          horaFin:    c.horaFin,
-          duracion:   paso,
-          estado:     EstadoSlot.DISPONIBLE,
-          nota:       soloTexto(nota),
+          horaFin: c.horaFin,
+          duracion: paso,
+          estado: EstadoSlot.DISPONIBLE,
+          nota: soloTexto(nota),
         })),
         // Si dos admins generan a la vez, el indice unico frena los duplicados
         // sin abortar el resto del lote.
         { ordered: false },
       ).catch((error: unknown) => {
-        if (typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000) return;
+        if (typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000)
+          return;
         throw error;
       });
     }
@@ -258,10 +260,7 @@ export const generarDisponibilidad = async (req: Request, res: Response): Promis
 export const bloquearDisponibilidad = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de slot no valido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'slot')) return;
 
     const slot = await DisponibilidadModelo.findById(id);
     if (!slot) {
@@ -276,7 +275,7 @@ export const bloquearDisponibilidad = async (req: Request, res: Response): Promi
     }
 
     slot.estado = EstadoSlot.BLOQUEADO;
-    slot.nota   = soloTexto(req.body?.nota) ?? slot.nota;
+    slot.nota = soloTexto(req.body?.nota) ?? slot.nota;
     await slot.save();
 
     res.status(200).json({ success: true, data: slot });
@@ -289,10 +288,7 @@ export const bloquearDisponibilidad = async (req: Request, res: Response): Promi
 export const desbloquearDisponibilidad = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de slot no valido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'slot')) return;
 
     const slot = await DisponibilidadModelo.findById(id);
     if (!slot) {
@@ -301,12 +297,12 @@ export const desbloquearDisponibilidad = async (req: Request, res: Response): Pr
     }
 
     if (slot.estado === EstadoSlot.OCUPADO) {
-      res.status(409).json({ error: 'El slot esta reservado, no bloqueado' });
+      res.status(409).json({ error: 'El slot está reservado, no bloqueado' });
       return;
     }
 
     slot.estado = EstadoSlot.DISPONIBLE;
-    slot.nota   = undefined;
+    slot.nota = undefined;
     await slot.save();
 
     res.status(200).json({ success: true, data: slot });
@@ -319,10 +315,7 @@ export const desbloquearDisponibilidad = async (req: Request, res: Response): Pr
 export const eliminarDisponibilidad = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      res.status(400).json({ error: 'ID de slot no valido' });
-      return;
-    }
+    if (!leerObjectId(res, id, 'slot')) return;
 
     const slot = await DisponibilidadModelo.findById(id);
     if (!slot) {
