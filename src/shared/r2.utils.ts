@@ -37,7 +37,9 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
   if (!urlOrKey) return '';
 
   if (!/^https?:\/\//i.test(urlOrKey)) {
-    return urlOrKey.replace(/^\/+/, '');
+    const limpia = urlOrKey.replace(/^\/+/, '');
+    const uploadsIdx = limpia.indexOf('uploads/');
+    return uploadsIdx !== -1 ? limpia.slice(uploadsIdx) : limpia;
   }
 
   let pathname: string;
@@ -45,6 +47,12 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
     pathname = new URL(urlOrKey).pathname;
   } catch {
     return urlOrKey;
+  }
+
+  // Si la ruta contiene uploads/, la key real en R2 empieza ahi (limpia /assets/, /api/media/, etc.)
+  const uploadsIdx = pathname.indexOf('uploads/');
+  if (uploadsIdx !== -1) {
+    return pathname.slice(uploadsIdx);
   }
 
   // El proxy de imagenes cuelga de /api/media; los dominios publicos de R2 no.
@@ -71,9 +79,10 @@ export const esReferenciaDeNuestroAlmacen = (valor: string): boolean => {
   return (
     (dominioPublico !== '' && valor.toLowerCase().startsWith(dominioPublico)) ||
     // Formas heredadas de otros entornos: el proxy de medios y el dominio
-    // directo del bucket.
+    // directo del bucket o el endpoint interno S3.
     /\/api\/media\//i.test(valor) ||
-    /\.r2\.dev\//i.test(valor)
+    /\.r2\.dev\//i.test(valor) ||
+    /\.r2\.cloudflarestorage\.com\//i.test(valor)
   );
 };
 

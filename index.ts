@@ -9,7 +9,7 @@ import orderRouter from './src/orders/order.routes';
 import servicioRouter from './src/services/servicio.routes';
 import disponibilidadRouter from './src/availability/disponibilidad.routes';
 import noticiaRouter from './src/news/noticia.routes';
-import { getFromR2 } from './src/shared/r2.utils';
+import { getFromR2, keyFromPublicUrl } from './src/shared/r2.utils';
 import { validateEnvironment } from './src/shared/env';
 import { corsOptions, esOrigenPermitido, registrarEstadoCors } from './src/shared/cors';
 
@@ -65,13 +65,16 @@ app.use('/api/noticias', noticiaRouter);
 // --- PROXY DE IMÁGENES R2 (público, sin auth) ---
 app.get('/api/media/*key', async (req, res) => {
   const segments = req.params.key;
-  const key = Array.isArray(segments) ? segments.join('/') : segments;
-  if (!key) return res.status(400).json({ error: 'Falta la clave del archivo' });
+  const rawKey = Array.isArray(segments) ? segments.join('/') : segments;
+  if (!rawKey) return res.status(400).json({ error: 'Falta la clave del archivo' });
+
+  const key = keyFromPublicUrl(rawKey);
 
   try {
     const { stream, contentType } = await getFromR2(key);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     stream.pipe(res);
   } catch (error) {
     // R2 (compatible con S3) responde NoSuchKey cuando el objeto no existe.
