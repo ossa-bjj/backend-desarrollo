@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'node:stream';
 
 const getR2Client = () => {
@@ -132,6 +133,32 @@ export const uploadToR2 = async (
   await s3Client.send(command);
 
   return key;
+};
+
+/**
+ * Genera una URL prefirmada (PUT) temporal para que el cliente suba directamente
+ * un Blob comprimido a Cloudflare R2 sin saturar el backend con buffers pesados.
+ */
+export const generarPresignedPutUrl = async (
+  fileName: string,
+  mimeType: string,
+  keyFija?: string,
+): Promise<{ url: string; key: string }> => {
+  const bucketName = process.env.R2_BUCKET_NAME || 'assets';
+  const s3Client = getR2Client();
+
+  const sanitized = fileName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
+  const key = keyFija ?? `uploads/${Date.now()}-${sanitized}`;
+
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    ContentType: mimeType,
+  });
+
+  const url = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+
+  return { url, key };
 };
 
 export const deleteFromR2 = async (key: string): Promise<void> => {

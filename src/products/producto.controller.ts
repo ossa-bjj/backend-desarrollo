@@ -3,7 +3,7 @@ import { PREFIJO_CATEGORIA, esCategoria } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import * as productos from './producto.service';
 import { sendServerError, esDuplicado } from '../shared/controller.utils';
-import { uploadToR2, deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
+import { uploadToR2, deleteFromR2, keyFromPublicUrl, generarPresignedPutUrl } from '../shared/r2.utils';
 
 // Express 5 tipa los parametros de ruta como string | string[].
 const parseCodigo = (valor: string | string[]): number | null => {
@@ -225,6 +225,68 @@ export const anadirImagenes = async (req: Request, res: Response): Promise<void>
     res.status(200).json({ success: true, data: producto });
   } catch (error) {
     sendServerError(res, 'Error subiendo las imagenes', error);
+  }
+};
+
+// --- POST /api/productos/:codigoArticulo/imagenes/presign (admin) ---
+export const presignImagenes = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const codigo = parseCodigo(req.params.codigoArticulo);
+    if (codigo === null) return codigoInvalido(res);
+
+    if (!(await productos.existePorCodigo(codigo))) return noEncontrado(res);
+
+    const { archivos } = req.body;
+    if (!Array.isArray(archivos) || archivos.length === 0) {
+      res.status(400).json({ error: 'Se requiere una lista de archivos con fileName y mimeType' });
+      return;
+    }
+
+    if (archivos.length > 10) {
+      res.status(400).json({ error: 'Máximo 10 imágenes por subida' });
+      return;
+    }
+
+    const presigned = await Promise.all(
+      archivos.map(async (item: { fileName?: string; mimeType?: string }) => {
+        const mime = item.mimeType || 'image/jpeg';
+        const nombre = item.fileName || 'producto.jpg';
+        return generarPresignedPutUrl(nombre, mime);
+      }),
+    );
+
+    res.status(200).json({ success: true, data: presigned });
+  } catch (error) {
+    sendServerError(res, 'Error generando URLs prefirmadas', error);
+  }
+};
+
+// --- POST /api/productos/:codigoArticulo/imagenes/confirmar (admin) ---
+export const confirmarImagenes = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const codigo = parseCodigo(req.params.codigoArticulo);
+    if (codigo === null) return codigoInvalido(res);
+
+    const { keys } = req.body;
+    if (!Array.isArray(keys) || keys.length === 0) {
+      res.status(400).json({ error: 'Se requiere una lista de keys' });
+      return;
+    }
+
+    const keysValidas = keys.filter(
+      (k): k is string => typeof k === 'string' && k.trim().startsWith('uploads/'),
+    );
+    if (keysValidas.length === 0) {
+      res.status(400).json({ error: 'Ninguna key proporcionada es válida' });
+      return;
+    }
+
+    const producto = await productos.anadirImagenes(codigo, keysValidas);
+    if (!producto) return noEncontrado(res);
+
+    res.status(200).json({ success: true, data: producto });
+  } catch (error) {
+    sendServerError(res, 'Error confirmando las imágenes subidas', error);
   }
 };
 

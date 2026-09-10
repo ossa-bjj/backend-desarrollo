@@ -9,6 +9,8 @@ import {
   actualizarStock,
   anadirImagenes,
   eliminarImagen,
+  presignImagenes,
+  confirmarImagenes,
 } from './producto.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 import upload from '../shared/file.middleware';
@@ -28,6 +30,8 @@ router.get('/:codigoArticulo', getProductoPorCodigo);
 router.post('/', isAuth, isAdmin, crearProducto);
 router.put('/:codigoArticulo', isAuth, isAdmin, actualizarProducto);
 router.patch('/:codigoArticulo/stock', isAuth, isAdmin, actualizarStock);
+router.post('/:codigoArticulo/imagenes/presign', isAuth, isAdmin, presignImagenes);
+router.post('/:codigoArticulo/imagenes/confirmar', isAuth, isAdmin, confirmarImagenes);
 router.post('/:codigoArticulo/imagenes', isAuth, isAdmin, upload.array('imagenes', 10), anadirImagenes);
 router.delete('/:codigoArticulo/imagenes', isAuth, isAdmin, eliminarImagen);
 router.delete('/:codigoArticulo', isAuth, isAdmin, eliminarProducto);
