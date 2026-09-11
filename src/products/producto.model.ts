@@ -69,6 +69,8 @@ export interface IProduct {
   marca?: string; // Para futuras funcionalidades de marca
   imagenes: string[];
   tags?: string[]; // Para búsquedas cruzadas (ej: ["BJJ", "MMA", "Venum"])
+  /** Si es false el producto no aparece en la tienda pública ni en búsquedas. */
+  activo?: boolean;
 }
 
 /**
@@ -139,6 +141,12 @@ const ProductoSchema = new Schema<IProduct>(
     tags: {
       type: [String],
       default: [],
+    },
+    // Un producto inactivo no se muestra en el catálogo público de la tienda ni se puede comprar.
+    activo: {
+      type: Boolean,
+      default: true,
+      index: true,
     },
   },
   {

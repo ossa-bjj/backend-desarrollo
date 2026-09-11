@@ -228,6 +228,8 @@ const resolverCatalogo = async (codigos: number[]): Promise<Map<number, EntradaC
   const catalogo = new Map<number, EntradaCatalogo>();
 
   for (const producto of productos) {
+    // Un producto inactivo deja de venderse, aunque siga en carritos antiguos.
+    if (producto.activo === false) continue;
     catalogo.set(producto.codigoArticulo, {
       name: producto.name,
       price: producto.price,

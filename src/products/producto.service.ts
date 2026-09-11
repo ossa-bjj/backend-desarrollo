@@ -4,6 +4,7 @@ import { Categoria, PREFIJO_CATEGORIA, ProductoModelo, TALLAS, esCategoria, esTa
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import { booleanoDeQuery, leerPaginacion, regexContiene, textoDeQuery } from '../shared/consulta.utils';
 import { soloCampos } from '../shared/actualizacion.utils';
+import { keyFromPublicUrl } from '../shared/r2.utils';
 
 /**
  * Toda la logica de seleccion, filtrado y paginacion del catalogo de productos.
@@ -31,6 +32,8 @@ export interface CriteriosProducto {
   marca?: string;
   texto?: string;
   destacado?: boolean;
+  activo?: boolean;
+  incluirInactivos?: boolean;
   pagina: number;
   limite: number;
 }
@@ -104,7 +107,10 @@ export const siguienteCodigoLibre = async (categoria: Categoria): Promise<number
 
 // --- Listado ---
 
-export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCriterios => {
+export const leerCriteriosProducto = (
+  query: Record<string, unknown>,
+  esAdmin: boolean = false,
+): LecturaCriterios => {
   const categoria = textoDeQuery(query.categoria);
   if (categoria !== undefined && !esCategoria(categoria)) {
     return { ok: false, error: `Categoría no válida. Valores admitidos: ${categoriasAdmitidas()}` };
@@ -119,6 +125,8 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
   }
 
   const { pagina, limite } = leerPaginacion(query, LIMITE_POR_DEFECTO, LIMITE_MAXIMO);
+  const activo = booleanoDeQuery(query.activo);
+  const incluirInactivos = esAdmin && query.soloActivos !== 'true';
 
   return {
     ok: true,
@@ -129,6 +137,8 @@ export const leerCriteriosProducto = (query: Record<string, unknown>): LecturaCr
       marca: textoDeQuery(query.marca),
       texto: textoDeQuery(query.q),
       destacado: booleanoDeQuery(query.destacado),
+      activo,
+      incluirInactivos,
       pagina,
       limite,
     },
@@ -145,6 +155,14 @@ const construirFiltro = (criterios: CriteriosProducto): FilterQuery<IProduct> =>
 
   if (criterios.destacado !== undefined) {
     filtro.tags = criterios.destacado ? TAG_DESTACADO : { $ne: TAG_DESTACADO };
+  }
+
+  // Filtrado de productos activos/visibles:
+  if (criterios.activo !== undefined) {
+    filtro.activo = criterios.activo;
+  } else if (!criterios.incluirInactivos) {
+    // Para la tienda pública, solo productos activos (o que no tengan activo explícito en false)
+    filtro.activo = { $ne: false };
   }
 
   // `codigoArticulo` es numerico y el filtro busca un fragmento, no el valor
@@ -226,10 +244,14 @@ export const normalizarTallas = (valor: unknown): ITallaStock[] | null => {
  * cobro.
  */
 export const motivoParaNoVender = (
-  producto: Pick<IProduct, 'name' | 'tallas'>,
+  producto: Pick<IProduct, 'name' | 'tallas' | 'activo'>,
   talla: unknown,
   cantidad: number,
 ): string | null => {
+  if (producto.activo === false) {
+    return `El producto "${producto.name}" no está disponible actualmente`;
+  }
+
   // Un producto se vende por tallas, asi que sin talla no hay de donde
   // descontar: pedir «una camiseta» sin decir cual es una peticion incompleta.
   //
@@ -295,6 +317,7 @@ const CAMPOS_ACTUALIZABLES = [
   'marca',
   'imagenes',
   'tags',
+  'activo',
 ] as const;
 
 /** Deja pasar solo los campos conocidos. Ver `shared/actualizacion.utils.ts`. */
@@ -322,6 +345,48 @@ export const anadirImagenes = (codigo: number, urls: string[]) =>
     { $push: { imagenes: { $each: urls } } },
     { new: true },
   );
+
+/**
+ * Mueve la imagen seleccionada al índice 0 del array `imagenes`.
+ * La primera posición determina la imagen principal en toda la web (catálogo, ficha, pedidos).
+ */
+export const establecerImagenPrincipal = async (codigo: number, urlOKey: string) => {
+  const producto = await buscarPorCodigo(codigo);
+  if (!producto) return null;
+
+  const targetKey = keyFromPublicUrl(urlOKey);
+  const index = producto.imagenes.findIndex((img) => {
+    if (img === urlOKey) return true;
+    const k = keyFromPublicUrl(img);
+    return Boolean(targetKey && k && k === targetKey);
+  });
+
+  if (index === -1) return null;
+  if (index === 0) return producto;
+
+  const [seleccionada] = producto.imagenes.splice(index, 1);
+  producto.imagenes.unshift(seleccionada);
+  return producto.save();
+};
+
+/**
+ * Fija el estado activo/visible de un producto, o lo alterna si no se especifica.
+ */
+export const alternarActivo = async (codigo: number, activo?: unknown) => {
+  if (typeof activo === 'boolean') {
+    return ProductoModelo.findOneAndUpdate(
+      { codigoArticulo: codigo },
+      { activo },
+      { new: true, runValidators: true },
+    );
+  }
+
+  const producto = await buscarPorCodigo(codigo);
+  if (!producto) return null;
+
+  producto.activo = !(producto.activo ?? true);
+  return producto.save();
+};
 
 /**
  * Quita la referencia a la imagen solo si pertenece a este producto: el filtro

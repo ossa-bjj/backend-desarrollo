@@ -156,7 +156,11 @@ export const generarPresignedPutUrl = async (
     ContentType: mimeType,
   });
 
-  const url = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+  // Cast por incompatibilidad entre versiones de @smithy/types instaladas por aws-sdk
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const url = await (getSignedUrl as any)(s3Client, command, {
+    expiresIn: 300,
+  });
 
   return { url, key };
 };

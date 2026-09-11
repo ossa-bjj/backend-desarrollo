@@ -26,7 +26,8 @@ const noEncontrado = (res: Response): void => {
 // --- GET /api/productos?categoria=&codigo=&nombre=&marca=&q=&destacado=&pagina=&limite= (publico) ---
 export const getProductos = async (req: Request, res: Response): Promise<void> => {
   try {
-    const lectura = productos.leerCriteriosProducto(req.query);
+    const esAdmin = req.user?.rol === 'admin';
+    const lectura = productos.leerCriteriosProducto(req.query, esAdmin);
     if (!lectura.ok) {
       res.status(400).json({ error: lectura.error });
       return;
@@ -78,8 +79,10 @@ export const getProductoPorCodigo = async (req: Request, res: Response): Promise
     const codigo = parseCodigo(req.params.codigoArticulo);
     if (codigo === null) return codigoInvalido(res);
 
+    const esAdmin = req.user?.rol === 'admin';
     const producto = await productos.buscarPorCodigo(codigo);
     if (!producto) return noEncontrado(res);
+    if (producto.activo === false && !esAdmin) return noEncontrado(res);
 
     res.status(200).json({ success: true, data: producto });
   } catch (error) {
@@ -101,6 +104,7 @@ export const crearProducto = async (req: Request, res: Response): Promise<void> 
       marca,
       imagenes,
       tags,
+      activo,
     } = req.body;
 
     const invalido = productos.validarCodigoYCategoria(codigoArticulo, category);
@@ -132,6 +136,7 @@ export const crearProducto = async (req: Request, res: Response): Promise<void> 
       marca,
       imagenes,
       tags,
+      activo: activo !== undefined ? Boolean(activo) : true,
     });
 
     res.status(201).json({ success: true, message: 'Producto creado correctamente', data: producto });
@@ -319,6 +324,45 @@ export const eliminarImagen = async (req: Request, res: Response): Promise<void>
     res.status(200).json({ success: true, data: producto });
   } catch (error) {
     sendServerError(res, 'Error eliminando la imagen', error);
+  }
+};
+
+// --- PATCH /api/productos/:codigoArticulo/imagenes/principal (admin) ---
+export const establecerImagenPrincipal = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const codigo = parseCodigo(req.params.codigoArticulo);
+    if (codigo === null) return codigoInvalido(res);
+
+    const { url } = req.body;
+    if (typeof url !== 'string' || !url) {
+      res.status(400).json({ error: 'Se requiere la URL o clave de la imagen a marcar como principal' });
+      return;
+    }
+
+    const producto = await productos.establecerImagenPrincipal(codigo, url);
+    if (!producto) {
+      res.status(404).json({ error: 'El producto no existe o no tiene esa imagen' });
+      return;
+    }
+
+    res.status(200).json({ success: true, data: producto });
+  } catch (error) {
+    sendServerError(res, 'Error estableciendo la imagen principal', error);
+  }
+};
+
+// --- PATCH /api/productos/:codigoArticulo/activo (admin) ---
+export const alternarActivoProducto = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const codigo = parseCodigo(req.params.codigoArticulo);
+    if (codigo === null) return codigoInvalido(res);
+
+    const producto = await productos.alternarActivo(codigo, req.body.activo);
+    if (!producto) return noEncontrado(res);
+
+    res.status(200).json({ success: true, data: producto });
+  } catch (error) {
+    sendServerError(res, 'Error actualizando visibilidad del producto', error);
   }
 };
 
