@@ -145,18 +145,19 @@ Los dos webhooks se autentican distinto, y por eso quieren el cuerpo distinto:
 Los servicios comparten el espacio de `codigoArticulo` con los productos, en el rango
 `6000`–`6999`.
 
-| Método | Ruta                        | Acceso  | Descripción                                                  |
-| ------ | --------------------------- | ------- | ------------------------------------------------------------ |
-| GET    | `/`                         | Público | Lista los servicios activos, ordenados por `orden` y código. |
-| GET    | `/search`                   | Público | Busca servicios activos por texto (`?q=`).                   |
-| GET    | `/admin/all`                | Admin   | Lista todos los servicios, incluidos los desactivados.       |
-| GET    | `/:codigoArticulo`          | Público | Obtiene un servicio por código.                              |
-| POST   | `/`                         | Admin   | Crea un servicio.                                            |
-| PUT    | `/:codigoArticulo`          | Admin   | Actualiza un servicio. El código no se reasigna.             |
-| PATCH  | `/:codigoArticulo/activo`   | Admin   | Fija `activo`, o lo alterna si no se envía.                  |
-| POST   | `/:codigoArticulo/imagenes` | Admin   | Sube hasta diez archivos en el campo multipart `imagenes`.   |
-| DELETE | `/:codigoArticulo/imagenes` | Admin   | Elimina una imagen. Cuerpo: `url`.                           |
-| DELETE | `/:codigoArticulo`          | Admin   | Elimina el servicio y sus imágenes de R2.                    |
+| Método | Ruta                                  | Acceso  | Descripción                                                                                           |
+| ------ | ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| GET    | `/`                                   | Público | Lista los servicios activos, ordenados por `orden` y código.                                          |
+| GET    | `/search`                             | Público | Busca servicios activos por texto (`?q=`).                                                            |
+| GET    | `/admin/all`                          | Admin   | Lista todos los servicios, incluidos los desactivados.                                                |
+| GET    | `/:codigoArticulo`                    | Público | Obtiene un servicio por código.                                                                       |
+| POST   | `/`                                   | Admin   | Crea un servicio.                                                                                     |
+| PUT    | `/:codigoArticulo`                    | Admin   | Actualiza un servicio. El código no se reasigna.                                                      |
+| PATCH  | `/:codigoArticulo/activo`             | Admin   | Fija `activo`, o lo alterna si no se envía.                                                           |
+| POST   | `/:codigoArticulo/imagenes`           | Admin   | Sube archivos multipart `imagenes` o asocia existentes vía JSON `{ url }` / `{ urls: [...] }`.         |
+| PATCH  | `/:codigoArticulo/imagenes/principal` | Admin   | Fija la imagen indicada (`{ url }`) como principal del servicio (índice 0).                           |
+| DELETE | `/:codigoArticulo/imagenes`           | Admin   | Quita una imagen del servicio. Solo borra el archivo de R2 si ningún otro servicio o producto la usa. |
+| DELETE | `/:codigoArticulo`                    | Admin   | Elimina el servicio y sus imágenes de R2 (solo las que no estén en uso por otras entidades).          |
 
 Campos propios: `modalidad` (`presencial` · `online` · `mixta`), `duracion` en minutos,
 `plazas` por sesión, `requiereReserva` y `requiereConfirmacion`.
