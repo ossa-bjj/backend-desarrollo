@@ -392,16 +392,26 @@ export const alternarActivo = async (codigo: number, activo?: unknown) => {
 };
 
 /**
- * Quita la referencia a la imagen solo si pertenece a este producto: el filtro
- * incluye la propia url. Asi el llamante sabe, por el resultado, si puede
- * borrar el objeto del bucket sin arriesgarse a tocar el de otro producto.
+ * Quita la referencia a la imagen casando tanto por URL publica completa como por key
+ * almacenada en la base de datos.
  */
-export const quitarImagen = (codigo: number, url: string) =>
-  ProductoModelo.findOneAndUpdate(
-    { codigoArticulo: codigo, imagenes: url },
-    { $pull: { imagenes: url } },
-    { new: true },
-  );
+export const quitarImagen = async (codigo: number, urlOKey: string) => {
+  const producto = await buscarPorCodigo(codigo);
+  if (!producto) return null;
+
+  const targetKey = keyFromPublicUrl(urlOKey);
+  const index = producto.imagenes.findIndex((img) => {
+    if (img === urlOKey) return true;
+    const k = keyFromPublicUrl(img);
+    return Boolean(targetKey && k && k === targetKey);
+  });
+
+  if (index === -1) return null;
+
+  const [quitada] = producto.imagenes.splice(index, 1);
+  await producto.save();
+  return { producto, quitada };
+};
 
 export const eliminarProducto = (codigo: number) =>
   ProductoModelo.findOneAndDelete({ codigoArticulo: codigo });

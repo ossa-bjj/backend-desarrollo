@@ -1,6 +1,7 @@
 import type { IServicio } from './servicio.model';
 import { ServicioModelo, CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from './servicio.model';
 import { soloCampos } from '../shared/actualizacion.utils';
+import { keyFromPublicUrl } from '../shared/r2.utils';
 
 /**
  * Consultas y operaciones del catalogo de servicios.
@@ -111,21 +112,48 @@ export const anadirImagenes = (codigo: number, urls: string[]) =>
   );
 
 /**
- * Quita la referencia a la imagen solo si pertenece a este servicio: el filtro
- * incluye la propia url.
- *
- * Importa el orden. Antes se borraba el objeto de R2 y despues se quitaba la
- * referencia, sin comprobar de quien era la url: mandando la de otro servicio
- * —o la de un producto— se borraba su fichero del bucket. Ahora la base de
- * datos decide primero, y solo si el `$pull` casa se toca el almacenamiento.
- * Es la misma correccion que ya tenia `producto.service.ts`.
+ * Quita la referencia a la imagen casando tanto por URL publica completa como por key
+ * almacenada en la base de datos.
  */
-export const quitarImagen = (codigo: number, url: string) =>
-  ServicioModelo.findOneAndUpdate(
-    { codigoArticulo: codigo, imagenes: url },
-    { $pull: { imagenes: url } },
-    { new: true },
-  );
+export const quitarImagen = async (codigo: number, urlOKey: string) => {
+  const servicio = await buscarPorCodigo(codigo);
+  if (!servicio) return null;
+
+  const targetKey = keyFromPublicUrl(urlOKey);
+  const index = servicio.imagenes.findIndex((img) => {
+    if (img === urlOKey) return true;
+    const k = keyFromPublicUrl(img);
+    return Boolean(targetKey && k && k === targetKey);
+  });
+
+  if (index === -1) return null;
+
+  const [quitada] = servicio.imagenes.splice(index, 1);
+  await servicio.save();
+  return { servicio, quitada };
+};
+
+/**
+ * Marca una imagen como principal moviendola al primer indice (0).
+ */
+export const establecerImagenPrincipal = async (codigo: number, urlOKey: string) => {
+  const servicio = await buscarPorCodigo(codigo);
+  if (!servicio) return null;
+
+  const targetKey = keyFromPublicUrl(urlOKey);
+  const index = servicio.imagenes.findIndex((img) => {
+    if (img === urlOKey) return true;
+    const k = keyFromPublicUrl(img);
+    return Boolean(targetKey && k && k === targetKey);
+  });
+
+  if (index === -1) return null;
+  if (index === 0) return servicio;
+
+  const [seleccionada] = servicio.imagenes.splice(index, 1);
+  servicio.imagenes.unshift(seleccionada);
+  return servicio.save();
+};
 
 export const eliminarServicio = (codigo: number) =>
   ServicioModelo.findOneAndDelete({ codigoArticulo: codigo });

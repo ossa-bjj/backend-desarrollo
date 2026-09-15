@@ -4,6 +4,7 @@ import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.m
 import * as productos from './producto.service';
 import { sendServerError, esDuplicado } from '../shared/controller.utils';
 import { uploadToR2, deleteFromR2, keyFromPublicUrl, generarPresignedPutUrl } from '../shared/r2.utils';
+import { borrarDeR2SiNoEstaEnUso } from '../shared/media.utils';
 
 // Express 5 tipa los parametros de ruta como string | string[].
 const parseCodigo = (valor: string | string[]): number | null => {
@@ -307,21 +308,16 @@ export const eliminarImagen = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Se quita primero la referencia y solo despues se borra el objeto: si la
-    // imagen no pertenece a este producto, el bucket no se toca.
-    const producto = await productos.quitarImagen(codigo, url);
-    if (!producto) {
+    // Se quita primero la referencia y solo despues se borra el objeto si no está en uso
+    const resultado = await productos.quitarImagen(codigo, url);
+    if (!resultado) {
       res.status(404).json({ error: 'El producto no existe o no tiene esa imagen' });
       return;
     }
 
-    try {
-      await deleteFromR2(keyFromPublicUrl(url));
-    } catch {
-      /* el objeto ya no estaba en R2 */
-    }
+    await borrarDeR2SiNoEstaEnUso(resultado.quitada || url);
 
-    res.status(200).json({ success: true, data: producto });
+    res.status(200).json({ success: true, data: resultado.producto });
   } catch (error) {
     sendServerError(res, 'Error eliminando la imagen', error);
   }

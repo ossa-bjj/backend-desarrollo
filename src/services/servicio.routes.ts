@@ -9,6 +9,7 @@ import {
   alternarActivoServicio,
   anadirImagenesServicio,
   eliminarImagenServicio,
+  establecerImagenPrincipalServicio,
   eliminarServicio,
 } from './servicio.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
@@ -35,6 +36,12 @@ router.post(
   anadirImagenesServicio,
 );
 router.delete('/:codigoArticulo/imagenes', isAuth, isAdmin, eliminarImagenServicio);
+router.patch(
+  '/:codigoArticulo/imagenes/principal',
+  isAuth,
+  isAdmin,
+  establecerImagenPrincipalServicio,
+);
 router.delete('/:codigoArticulo', isAuth, isAdmin, eliminarServicio);
 
 export default router;

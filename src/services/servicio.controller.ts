@@ -14,7 +14,8 @@ import {
   conflicto,
   esDuplicado,
 } from '../shared/controller.utils';
-import { uploadToR2, deleteFromR2, keyFromPublicUrl } from '../shared/r2.utils';
+import { uploadToR2, keyFromPublicUrl } from '../shared/r2.utils';
+import { borrarDeR2SiNoEstaEnUso } from '../shared/media.utils';
 
 const codigoInvalido = (res: Response): void =>
   peticionInvalida(
@@ -23,15 +24,6 @@ const codigoInvalido = (res: Response): void =>
   );
 
 const sinServicio = (res: Response): void => noEncontrado(res, 'Servicio');
-
-/** Borra un objeto del bucket sin propagar el fallo: la referencia ya no existe. */
-const borrarDelBucket = async (url: string): Promise<void> => {
-  try {
-    await deleteFromR2(keyFromPublicUrl(url));
-  } catch {
-    /* si el fichero ya no esta en R2, no hay nada que hacer */
-  }
-};
 
 // --- GET /api/servicios (publico: solo activos) ---
 export const getServicios = async (_req: Request, res: Response): Promise<void> => {
@@ -139,14 +131,25 @@ export const anadirImagenesServicio = async (req: Request, res: Response): Promi
     if (codigo === null) return codigoInvalido(res);
 
     const files = (req.files ?? []) as Express.Multer.File[];
-    if (files.length === 0) {
+    let urlsOKeys: string[] = [];
+
+    if (files.length > 0) {
+      urlsOKeys = await Promise.all(files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)));
+    } else if (req.body?.urls && Array.isArray(req.body.urls)) {
+      urlsOKeys = req.body.urls
+        .filter((u: unknown): u is string => typeof u === 'string' && u.trim().length > 0)
+        .map((u: string) => keyFromPublicUrl(u) || u.trim());
+    } else if (typeof req.body?.url === 'string' && req.body.url.trim().length > 0) {
+      const u = req.body.url.trim();
+      urlsOKeys = [keyFromPublicUrl(u) || u];
+    }
+
+    if (urlsOKeys.length === 0) {
       peticionInvalida(res, 'No se enviaron imágenes');
       return;
     }
 
-    const urls = await Promise.all(files.map((f) => uploadToR2(f.buffer, f.originalname, f.mimetype)));
-
-    const servicio = await servicios.anadirImagenes(codigo, urls);
+    const servicio = await servicios.anadirImagenes(codigo, urlsOKeys);
     if (!servicio) return sinServicio(res);
 
     res.status(200).json({ success: true, data: servicio });
@@ -167,19 +170,39 @@ export const eliminarImagenServicio = async (req: Request, res: Response): Promi
       return;
     }
 
-    // La base de datos manda: el `$pull` solo casa si la imagen es de ESTE
-    // servicio. Solo entonces se borra el objeto del bucket.
-    const servicio = await servicios.quitarImagen(codigo, url);
-    if (!servicio) {
+    const resultado = await servicios.quitarImagen(codigo, url);
+    if (!resultado) {
       res.status(404).json({ error: 'El servicio no existe o no tiene esa imagen' });
       return;
     }
 
-    await borrarDelBucket(url);
+    // Solo borra el fichero físico de R2 si ninguna otra entidad (otro servicio o producto) lo está usando
+    await borrarDeR2SiNoEstaEnUso(resultado.quitada || url);
+
+    res.status(200).json({ success: true, data: resultado.servicio });
+  } catch (error) {
+    sendServerError(res, 'Error eliminando la imagen del servicio', error);
+  }
+};
+
+// --- PATCH /api/servicios/:codigoArticulo/imagenes/principal (admin) ---
+export const establecerImagenPrincipalServicio = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const codigo = servicios.leerCodigoServicio(req.params.codigoArticulo);
+    if (codigo === null) return codigoInvalido(res);
+
+    const { url } = req.body;
+    if (typeof url !== 'string' || !url) {
+      peticionInvalida(res, 'Se requiere la URL o clave de la imagen a marcar como principal');
+      return;
+    }
+
+    const servicio = await servicios.establecerImagenPrincipal(codigo, url);
+    if (!servicio) return sinServicio(res);
 
     res.status(200).json({ success: true, data: servicio });
   } catch (error) {
-    sendServerError(res, 'Error eliminando la imagen del servicio', error);
+    sendServerError(res, 'Error marcando imagen principal del servicio', error);
   }
 };
 
@@ -192,8 +215,8 @@ export const eliminarServicio = async (req: Request, res: Response): Promise<voi
     const servicio = await servicios.eliminarServicio(codigo);
     if (!servicio) return sinServicio(res);
 
-    // Las imagenes se borran del bucket para no dejar huerfanos.
-    await Promise.all(servicio.imagenes.map(borrarDelBucket));
+    // Las imagenes se borran de R2 solo si ningun otro producto o servicio las usa
+    await Promise.all(servicio.imagenes.map((img) => borrarDeR2SiNoEstaEnUso(img)));
 
     res.status(200).json({ success: true, message: 'Servicio eliminado' });
   } catch (error) {
