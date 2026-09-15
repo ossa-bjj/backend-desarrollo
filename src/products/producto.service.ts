@@ -125,7 +125,10 @@ export const leerCriteriosProducto = (
   }
 
   const { pagina, limite } = leerPaginacion(query, LIMITE_POR_DEFECTO, LIMITE_MAXIMO);
-  const activo = booleanoDeQuery(query.activo);
+  // Solo un admin puede pedir un estado concreto o ver los inactivos; a quien
+  // no lo es se le ignora el filtro y cae en el `{ $ne: false }` publico de
+  // `construirFiltro`, igual que ya hace `getProductoPorCodigo`.
+  const activo = esAdmin ? booleanoDeQuery(query.activo) : undefined;
   const incluirInactivos = esAdmin && query.soloActivos !== 'true';
 
   return {
