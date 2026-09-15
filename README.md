@@ -46,12 +46,12 @@ Todo cuelga de `/api`. Por ejemplo: `/api/productos`, `/api/pedidos`.
 
 ## 🚀 Ponerlo en marcha
 
-Necesitas [Node.js](https://nodejs.org), `pnpm` y una base de datos MongoDB.
+Necesitas [Node.js](https://nodejs.org), `npm` y una base de datos MongoDB.
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env     # rellenar con valores reales
-pnpm dev                 # ¡listo! → http://localhost:3000
+npm run dev               # ¡listo! → http://localhost:3000
 ```
 
 > [!IMPORTANT]
@@ -111,12 +111,12 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 
 ## 🧰 Comandos
 
-| Comando          | Qué hace                                  |
-| ---------------- | ----------------------------------------- |
-| `pnpm dev`       | Arranca en local y se reinicia al guardar |
-| `pnpm verificar` | Comprueba los tipos sin generar nada      |
-| `pnpm build`     | Compila a `dist/`                         |
-| `pnpm start`     | Ejecuta lo compilado                      |
+| Comando             | Qué hace                                  |
+| ------------------- | ----------------------------------------- |
+| `npm run dev`       | Arranca en local y se reinicia al guardar |
+| `npm run verificar` | Comprueba los tipos sin generar nada      |
+| `npm run build`     | Compila a `dist/`                         |
+| `npm start`         | Ejecuta lo compilado                      |
 
 ### 🌱 Datos de prueba
 

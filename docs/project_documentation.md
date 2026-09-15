@@ -434,7 +434,7 @@ miente. Como un pedido no se borra desde la aplicación, partir de cero es lo ú
 garantiza un estado coherente.
 
 `seed.ts` **no entra en `tsconfig`** (`include: ["src", "index.ts", "api"]`), así que
-`pnpm verificar` no la comprueba: al tocarla hay que verificarla a mano.
+`npm run verificar` no la comprueba: al tocarla hay que verificarla a mano.
 
 ---
 
@@ -508,14 +508,14 @@ STRIPE_SECRET_KEY=<stripe-secret-key>
 ### Requisitos
 
 - Node.js 22 o superior (probado con v25).
-- pnpm 11.
+- npm.
 - Una base MongoDB accesible (Atlas o local).
 - Un bucket de Cloudflare R2 con sus credenciales.
 
 ### Pasos
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env
 # rellenar .env con los valores reales
 ```
@@ -529,19 +529,19 @@ La base arranca vacía: no hay semilla en el repositorio.
 ### Desarrollo
 
 ```bash
-pnpm dev          # ts-node-dev con recarga, en http://localhost:3000
-pnpm lint         # eslint .
-pnpm format       # prettier --write .
-pnpm verificar    # tsc --noEmit && eslint . && prettier --check .
+npm run dev          # ts-node-dev con recarga, en http://localhost:3000
+npm run lint         # eslint .
+npm run format       # prettier --write .
+npm run verificar    # tsc --noEmit && eslint . && prettier --check .
 ```
 
-`pnpm verificar` es la puerta: pasa los tres antes de dar un cambio por bueno.
+`npm run verificar` es la puerta: pasa los tres antes de dar un cambio por bueno.
 
 ### Producción
 
 ```bash
-pnpm build        # tsc → dist/
-pnpm start        # node dist/index.js
+npm run build     # tsc → dist/
+npm start         # node dist/index.js
 ```
 
 `index.ts` solo llama a `listen()` cuando se ejecuta directamente
@@ -558,7 +558,7 @@ Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
 ### Comprobación estática
 
 ```bash
-pnpm verificar    # tsc --noEmit && eslint . && prettier --check .
+npm run verificar    # tsc --noEmit && eslint . && prettier --check .
 ```
 
 Tipos, linter y formato. `seed.ts` queda fuera: no está en `tsconfig` ni la revisa ESLint.

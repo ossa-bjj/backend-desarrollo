@@ -1,4 +1,0 @@
-minimumReleaseAgeExclude:
-  - '@aws-sdk/s3-request-presigner@3.1130.0'
-onlyBuiltDependencies:
-  - '@aws-sdk/client-s3'

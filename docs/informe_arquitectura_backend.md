@@ -565,7 +565,7 @@ git add --renormalize .
 ### Verificación hecha
 
 - [x] `npm run verificar` en verde en el backend: `tsc --noEmit`, `eslint .`, `prettier --check .`.
-- [x] `pnpm verificar` en verde en el frontend.
+- [x] `npm run verificar` en verde en el frontend.
 - [ ] **Falta probar a mano:** el alta de un pedido con producto (con talla) y con servicio
       (con horario), y un cobro completo de principio a fin. B6 y B7 movieron las reglas de
       sitio sin cambiarlas, pero eso el compilador no lo garantiza.
