@@ -21,6 +21,12 @@ const getR2Client = () => {
   });
 };
 
+/** Si `ruta` contiene `uploads/`, la key real en R2 empieza ahi. */
+const desdeSegmentoUploads = (ruta: string): string | null => {
+  const uploadsIdx = ruta.indexOf('uploads/');
+  return uploadsIdx !== -1 ? ruta.slice(uploadsIdx) : null;
+};
+
 /**
  * Extrae la key interna del bucket a partir de lo que haya guardado en base de
  * datos. Hasta ahora se persistia la URL absoluta con el dominio del entorno en
@@ -39,8 +45,7 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
 
   if (!/^https?:\/\//i.test(urlOrKey)) {
     const limpia = urlOrKey.replace(/^\/+/, '');
-    const uploadsIdx = limpia.indexOf('uploads/');
-    return uploadsIdx !== -1 ? limpia.slice(uploadsIdx) : limpia;
+    return desdeSegmentoUploads(limpia) ?? limpia;
   }
 
   let pathname: string;
@@ -50,14 +55,8 @@ export const keyFromPublicUrl = (urlOrKey: string): string => {
     return urlOrKey;
   }
 
-  // Si la ruta contiene uploads/, la key real en R2 empieza ahi (limpia /assets/, /api/media/, etc.)
-  const uploadsIdx = pathname.indexOf('uploads/');
-  if (uploadsIdx !== -1) {
-    return pathname.slice(uploadsIdx);
-  }
-
   // El proxy de imagenes cuelga de /api/media; los dominios publicos de R2 no.
-  return pathname.replace(/^\/api\/media\//, '/').replace(/^\/+/, '');
+  return desdeSegmentoUploads(pathname) ?? pathname.replace(/^\/api\/media\//, '/').replace(/^\/+/, '');
 };
 
 /**
