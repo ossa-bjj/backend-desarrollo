@@ -372,6 +372,29 @@ talla. Dos reservas del mismo servicio a horas distintas, o la misma camiseta en
 tallas, son líneas separadas y no una con cantidad 2. Ver
 [Visita guiada](#14-visita-guiada).
 
+### Servicio
+
+```text
+Servicio
+├── codigoArticulo       código único en rango 60XX (ej: "6001")
+├── nombre               título del servicio
+├── categoria, subcategoria
+├── descripcion          resumen corto para catálogo
+├── descripcionCompleta  texto explicativo detallado para la página propia
+├── precio               valor numérico
+├── precioDesde          booleano: indica si es precio base ("Desde X €")
+├── unidadPrecio         sufijo opcional ("/mes", "/h", "por persona")
+├── textoBoton           CTA personalizado ("Comprar", "Reservar", "Solicitar fecha")
+├── modalidad            online | presencial | hibrido
+├── duracionMinutos      duración estimada de la sesión
+├── plazasMaximas        aforo si aplica
+├── requiereReserva      booleano: exige selección de hueco en Disponibilidad
+├── activo               visibilidad en catálogo
+├── imagenes[]           URLs en R2 (se muestran en catálogo general)
+├── etiquetas[]          palabras clave informativas
+└── orden                peso de ordenación en listados
+```
+
 ### Disponibilidad
 
 ```text
