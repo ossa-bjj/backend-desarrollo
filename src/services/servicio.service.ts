@@ -32,6 +32,9 @@ const CAMPOS_ACTUALIZABLES = [
   'imagenes',
   'tags',
   'orden',
+  'textoBoton',
+  'precioDesde',
+  'unidadPrecio',
 ] as const;
 
 /**

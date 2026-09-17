@@ -28,6 +28,9 @@ export interface IServicio {
   imagenes: string[];
   tags: string[];
   orden: number;
+  textoBoton?: string;
+  precioDesde?: boolean;
+  unidadPrecio?: string;
 }
 
 const ServicioSchema = new Schema<IServicio>(
@@ -120,6 +123,20 @@ const ServicioSchema = new Schema<IServicio>(
     orden: {
       type: Number,
       default: 0,
+    },
+    textoBoton: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    precioDesde: {
+      type: Boolean,
+      default: false,
+    },
+    unidadPrecio: {
+      type: String,
+      trim: true,
+      default: '',
     },
   },
   {
