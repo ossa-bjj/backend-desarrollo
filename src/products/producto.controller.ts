@@ -3,7 +3,7 @@ import { PREFIJO_CATEGORIA, esCategoria } from './producto.model';
 import { CODIGO_SERVICIO_MIN, CODIGO_SERVICIO_MAX } from '../services/servicio.model';
 import * as productos from './producto.service';
 import { sendServerError, esDuplicado } from '../shared/controller.utils';
-import { uploadToR2, deleteFromR2, keyFromPublicUrl, generarPresignedPutUrl } from '../shared/r2.utils';
+import { uploadToR2, generarPresignedPutUrl } from '../shared/r2.utils';
 import { borrarDeR2SiNoEstaEnUso } from '../shared/media.utils';
 
 // Express 5 tipa los parametros de ruta como string | string[].
