@@ -36,12 +36,7 @@ router.post(
   anadirImagenesServicio,
 );
 router.delete('/:codigoArticulo/imagenes', isAuth, isAdmin, eliminarImagenServicio);
-router.patch(
-  '/:codigoArticulo/imagenes/principal',
-  isAuth,
-  isAdmin,
-  establecerImagenPrincipalServicio,
-);
+router.patch('/:codigoArticulo/imagenes/principal', isAuth, isAdmin, establecerImagenPrincipalServicio);
 router.delete('/:codigoArticulo', isAuth, isAdmin, eliminarServicio);
 
 export default router;

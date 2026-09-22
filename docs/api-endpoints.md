@@ -154,7 +154,7 @@ Los servicios comparten el espacio de `codigoArticulo` con los productos, en el 
 | POST   | `/`                                   | Admin   | Crea un servicio.                                                                                     |
 | PUT    | `/:codigoArticulo`                    | Admin   | Actualiza un servicio. El código no se reasigna.                                                      |
 | PATCH  | `/:codigoArticulo/activo`             | Admin   | Fija `activo`, o lo alterna si no se envía.                                                           |
-| POST   | `/:codigoArticulo/imagenes`           | Admin   | Sube archivos multipart `imagenes` o asocia existentes vía JSON `{ url }` / `{ urls: [...] }`.         |
+| POST   | `/:codigoArticulo/imagenes`           | Admin   | Sube archivos multipart `imagenes` o asocia existentes vía JSON `{ url }` / `{ urls: [...] }`.        |
 | PATCH  | `/:codigoArticulo/imagenes/principal` | Admin   | Fija la imagen indicada (`{ url }`) como principal del servicio (índice 0).                           |
 | DELETE | `/:codigoArticulo/imagenes`           | Admin   | Quita una imagen del servicio. Solo borra el archivo de R2 si ningún otro servicio o producto la usa. |
 | DELETE | `/:codigoArticulo`                    | Admin   | Elimina el servicio y sus imágenes de R2 (solo las que no estén en uso por otras entidades).          |
