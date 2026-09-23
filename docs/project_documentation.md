@@ -583,41 +583,55 @@ npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier -
 
 ### Comprobación automática
 
-**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/` y hoy cubren un
-único dominio: el **webhook de Stripe**, que es por donde entra el dinero.
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/` y hoy cubren el
+**cobro con Stripe** de punta a punta: arrancarlo, los avisos que devuelve Stripe y la
+devolución del dinero.
 
 ```text
 test/
-├── setup/entorno.ts     Arranca MongoDB en memoria y fija las variables de entorno
+├── setup/
+│   ├── mongo.ts         Arranca una MongoDB en memoria para toda la suite
+│   └── entorno.ts       Conecta cada fichero a su propia base y fija el entorno
 ├── ayudas/
 │   ├── webhook.ts       Carga la app, firma eventos y los entrega como Stripe
-│   └── pedidos.ts       Pedidos y productos de prueba
-└── webhook/
-    ├── firma.test.ts            Autenticación: sin firma, firma falsa, otro secreto,
-    │                            evento viejo, cuerpo manipulado
-    ├── pago-completado.test.ts  payment_intent.succeeded
-    ├── pago-fallido.test.ts     payment_intent.payment_failed
-    ├── pago-expirado.test.ts    payment_intent.canceled
-    ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
-    └── reembolso.test.ts        charge.refunded
+│   ├── pedidos.ts       Pedidos y productos de prueba
+│   ├── sesion.ts        Tokens de cliente y de admin
+│   └── stripe-simulado.ts   SDK de Stripe de mentira, que apunta cómo se le llama
+├── webhook/
+│   ├── firma.test.ts            Autenticación: sin firma, firma falsa, otro secreto,
+│   │                            evento viejo, cuerpo manipulado
+│   ├── pago-completado.test.ts  payment_intent.succeeded
+│   ├── pago-fallido.test.ts     payment_intent.payment_failed
+│   ├── pago-expirado.test.ts    payment_intent.canceled
+│   ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
+│   └── reembolso.test.ts        charge.refunded
+└── pagos/
+    ├── iniciar-pago.test.ts         POST /pedidos/:id/pago/iniciar: permisos, estados
+    │                                cobrables y qué se le pide a Stripe
+    ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
+    └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
 ```
 
-Dos decisiones que explican cómo están escritos:
+Tres decisiones que explican cómo están escritos:
 
 - **La firma se genera con el SDK de Stripe** (`generateTestHeaderString`), que calcula
   el mismo HMAC que Stripe en sus servidores. Así se ejercita la verificación real y no
   una imitación.
 - **La base de datos es de verdad, en memoria.** Un test de cobro que no comprueba que el
-  pedido quedó guardado como pagado no prueba lo que importa. Nunca se llama a la API de
-  Stripe: la clave del entorno de pruebas es de juguete y solo se usa para firmar.
+  pedido quedó guardado como pagado no prueba lo que importa. Cada fichero usa su propia
+  base dentro del mismo servidor, para poder ir en paralelo sin pisarse.
+- **A Stripe no se le llama nunca.** Los eventos del webhook se firman en local, y para
+  crear cobros y reembolsos se sustituye el cliente por uno de mentira que apunta con qué
+  se le llama: importe en céntimos, metadata con el pedido y método correcto. Lo que se
+  prueba es nuestro lado del contrato.
 
 Los tests quedan fuera de `tsconfig.json` a propósito, para que no acaben en `dist/`. Se
 analizan con `tsconfig.test.json`, que es el que usan `npm run verificar` y ESLint.
 
 `seed.ts` queda fuera de todo: no está en `tsconfig` ni lo revisa ESLint.
 
-**Lo que no está cubierto**: iniciar un pago, la captura de PayPal y su webhook, pedidos,
-usuarios, catálogo y disponibilidad.
+**Lo que no está cubierto**: el cobro con PayPal, los pedidos (alta, confirmación,
+rechazo), usuarios, catálogo y disponibilidad.
 
 ### Comprobación funcional
 
