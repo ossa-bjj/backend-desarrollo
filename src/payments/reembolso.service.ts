@@ -45,6 +45,44 @@ const devolverStock = async (order: Pedido): Promise<void> => {
 };
 
 /**
+ * Anota un reembolso que ya ha ocurrido fuera de aqui y repone el stock.
+ *
+ * Es el caso de una devolucion hecha desde el panel de Stripe: el dinero ya ha
+ * salido, asi que no hay nada que pedirle a la pasarela; lo que falta es que el
+ * pedido lo refleje y que las unidades vuelvan al catalogo. Sin esto, un
+ * reembolso hecho fuera dejaba el pedido figurando como cobrado.
+ *
+ * Idempotente: Stripe reintenta, y el reembolso puede haber salido de nuestro
+ * propio panel, que ya hizo el trabajo. Un pedido con `reembolsoId` no se toca.
+ *
+ * Solo la devolucion completa cancela el pedido y repone existencias. Una
+ * parcial —un descuento, un porte— deja el pedido cobrado: lo comprado sigue
+ * comprado, y devolver stock ahi seria inventar unidades.
+ */
+export const registrarReembolsoExterno = async (
+  order: Pedido,
+  reembolso: { reembolsoId: string; completo: boolean },
+): Promise<void> => {
+  if (order.pago?.reembolsoId) return;
+
+  order.pago = {
+    proveedor: order.pago?.proveedor ?? 'stripe',
+    paymentIntentId: order.pago?.paymentIntentId ?? '',
+    estado: order.pago?.estado ?? '',
+    pagadoEn: order.pago?.pagadoEn,
+    reembolsoId: reembolso.reembolsoId,
+    reembolsadoEn: new Date(),
+  };
+
+  if (reembolso.completo) {
+    await devolverStock(order);
+    order.status = OrderStatus.CANCELADO;
+  }
+
+  await order.save();
+};
+
+/**
  * Devuelve el importe por donde entro y repone el stock.
  *
  * No cambia el estado del pedido: de eso se encarga quien lo cancela, para que

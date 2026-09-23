@@ -9,6 +9,7 @@
  */
 
 import type { HydratedDocument } from 'mongoose';
+import { isValidObjectId } from 'mongoose';
 import type Stripe from 'stripe';
 import type { IOrder } from '../orders/order.model';
 import { Order, OrderStatus, OrderItemTipo, ESTADOS_NO_PAGABLES } from '../orders/order.model';
@@ -170,6 +171,60 @@ export const iniciarConPayPal = async (order: Pedido, returnUrl: string): Promis
   await order.save();
 
   return { proveedor: 'paypal', approveUrl: orden.approveUrl, orderId: String(order._id) };
+};
+
+/**
+ * Encuentra el pedido al que se refiere un aviso de Stripe.
+ *
+ * El camino principal es `metadata.orderId`, que se graba al crear el intento.
+ * El respaldo es el id del intento, que el pedido guarda y esta indexado: hace
+ * falta porque no todos los eventos traen la metadata del PaymentIntent —un
+ * cobro creado desde el panel de Stripe, por ejemplo—, y porque perder un aviso
+ * de cobro significa dejar sin consolidar un pedido que si esta pagado.
+ */
+export const pedidoDelIntento = async (intent: {
+  id: string;
+  metadata?: Stripe.Metadata | null;
+}): Promise<Pedido | null> => {
+  const orderId = intent.metadata?.orderId;
+  if (orderId && isValidObjectId(orderId)) {
+    const porMetadata = await Order.findById(orderId);
+    if (porMetadata) return porMetadata;
+  }
+
+  return Order.findOne({ 'pago.paymentIntentId': intent.id });
+};
+
+/**
+ * Guarda en que punto va el intento, sin cambiar el estado del pedido.
+ *
+ * Sirve para los avisos que no son el cobro: rechazo, pago asincrono en curso e
+ * intento caducado. Ninguno cierra el pedido —el cliente puede reintentar—,
+ * pero todos cambian lo que hay que ensenar en el panel.
+ *
+ * Un pedido ya pagado no se toca: Stripe no garantiza el orden de entrega ni
+ * deja de reintentar un aviso viejo, y un `payment_failed` que llega tarde no
+ * puede pisar el estado de un cobro que si entro.
+ */
+export const anotarEstadoDelIntento = async (intent: {
+  id: string;
+  status: string;
+  metadata?: Stripe.Metadata | null;
+}): Promise<void> => {
+  const order = await pedidoDelIntento(intent);
+  if (!order) {
+    console.warn(`Aviso de Stripe para un pedido inexistente: intento ${intent.id}`);
+    return;
+  }
+
+  if (order.status === OrderStatus.PAGADO) return;
+
+  order.pago = {
+    proveedor: order.pago?.proveedor ?? 'stripe',
+    paymentIntentId: order.pago?.paymentIntentId ?? intent.id,
+    estado: intent.status,
+  };
+  await order.save();
 };
 
 /** Linea que se cobro sin que quedaran existencias de su talla. */
