@@ -110,8 +110,28 @@ pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
 | ------ | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | POST   | `/:id/pago/iniciar`  | Autenticado | Arranca el cobro sobre el total confirmado. Cuerpo: `metodo` (`stripe` · `bizum` · `paypal`) y `returnUrl` (obligatoria en `paypal`). Con Stripe y Bizum crea o reutiliza el PaymentIntent y devuelve `{ proveedor, clientSecret, orderId }`; con PayPal crea la orden y devuelve `{ proveedor, approveUrl, orderId }`. Rechaza los pedidos ya pagados o en estado no pagable. |
 | POST   | `/:id/pago/capturar` | Autenticado | Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo. Devuelve el pedido. `409` si el pedido no tiene un pago de PayPal pendiente o si PayPal no completó el cobro. Sobre un pedido ya pagado responde `200` sin volver a cobrar.                                                                                                                                    |
-| POST   | `/webhook`           | Público     | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token.                                                                                                                                                                                                                                                                                           |
+| POST   | `/webhook`           | Público     | Recibe los eventos de Stripe. Lo autentica la firma `stripe-signature`, no un token. Ver la tabla de eventos más abajo.                                                                                                                                                                                                                                                        |
 | POST   | `/webhook/paypal`    | Público     | Recibe los eventos de PayPal, suscrito a `CHECKOUT.ORDER.APPROVED`. Cierra el pago del cliente que aprueba y **no vuelve al sitio**.                                                                                                                                                                                                                                           |
+
+### Eventos de Stripe que se escuchan
+
+| Evento                          | Qué hace                                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `payment_intent.succeeded`      | Marca el pedido como **pagado**, consolida los horarios y descuenta stock. Es el único que cierra un cobro.                   |
+| `payment_intent.processing`     | Pago asíncrono en marcha (Bizum). Anota el estado; el pedido **no** pasa a pagado ni se toca el stock hasta el desenlace.     |
+| `payment_intent.payment_failed` | Anota el estado. El pedido sigue pendiente y pagable: el cliente puede reintentar.                                            |
+| `payment_intent.canceled`       | El intento caducó o se canceló desde el panel. Anota el estado para que no se reutilice un intento muerto al volver a pagar.  |
+| `charge.refunded`               | Devolución hecha **desde el panel de Stripe**. Anota el reembolso; si es completa, cancela el pedido y devuelve las unidades. |
+
+Cualquier otro evento se acepta con `200` sin hacer nada: Stripe reintenta lo que no
+recibe un 2xx, y un aviso que no nos interesa no mejora por repetirse.
+
+Los avisos que no son el cobro **nunca tocan un pedido ya pagado**. Stripe no garantiza el
+orden de entrega y reintenta durante horas: un `payment_failed` que llega tarde no puede
+pisar el estado de un cobro que sí entró.
+
+El pedido al que se refiere un aviso se busca primero por `metadata.orderId`, que se graba
+al crear el intento, y si no, por el id del intento, que el pedido guarda indexado.
 
 **`returnUrl` se valida contra `ALLOWED_ORIGINS`**, la misma lista que gobierna CORS: la
 manda el navegador, y sin esa comprobación el endpoint serviría para mandar a un cliente a

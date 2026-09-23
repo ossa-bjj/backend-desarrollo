@@ -128,7 +128,7 @@ backend/
 │   └── project_documentation.md   Este documento
 ├── eslint.config.mjs         Reglas de linter
 ├── .prettierrc.json          Formato
-├── vercel.json               Reescritura de todo el tráfico hacia /api
+├── vercel.json               Reescritura hacia /api y región de la función (cdg1)
 └── .env.example              Plantilla de variables
 ```
 
@@ -575,16 +575,63 @@ serverless.
 
 ## 11. Tests
 
-Hay dos verificaciones, y ninguna necesita framework de pruebas: **no hay Jest ni
-Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
-
-### Comprobación estática
-
 ```bash
-npm run verificar    # tsc --noEmit && eslint . && prettier --check .
+npm test          # vitest run
+npm run test:watch
+npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier --check .
 ```
 
-Tipos, linter y formato. `seed.ts` queda fuera: no está en `tsconfig` ni la revisa ESLint.
+### Comprobación automática
+
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/` y hoy cubren el
+**cobro con Stripe** de punta a punta: arrancarlo, los avisos que devuelve Stripe y la
+devolución del dinero.
+
+```text
+test/
+├── setup/
+│   ├── mongo.ts         Arranca una MongoDB en memoria para toda la suite
+│   └── entorno.ts       Conecta cada fichero a su propia base y fija el entorno
+├── ayudas/
+│   ├── webhook.ts       Carga la app, firma eventos y los entrega como Stripe
+│   ├── pedidos.ts       Pedidos y productos de prueba
+│   ├── sesion.ts        Tokens de cliente y de admin
+│   └── stripe-simulado.ts   SDK de Stripe de mentira, que apunta cómo se le llama
+├── webhook/
+│   ├── firma.test.ts            Autenticación: sin firma, firma falsa, otro secreto,
+│   │                            evento viejo, cuerpo manipulado
+│   ├── pago-completado.test.ts  payment_intent.succeeded
+│   ├── pago-fallido.test.ts     payment_intent.payment_failed
+│   ├── pago-expirado.test.ts    payment_intent.canceled
+│   ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
+│   └── reembolso.test.ts        charge.refunded
+└── pagos/
+    ├── iniciar-pago.test.ts         POST /pedidos/:id/pago/iniciar: permisos, estados
+    │                                cobrables y qué se le pide a Stripe
+    ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
+    └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
+```
+
+Tres decisiones que explican cómo están escritos:
+
+- **La firma se genera con el SDK de Stripe** (`generateTestHeaderString`), que calcula
+  el mismo HMAC que Stripe en sus servidores. Así se ejercita la verificación real y no
+  una imitación.
+- **La base de datos es de verdad, en memoria.** Un test de cobro que no comprueba que el
+  pedido quedó guardado como pagado no prueba lo que importa. Cada fichero usa su propia
+  base dentro del mismo servidor, para poder ir en paralelo sin pisarse.
+- **A Stripe no se le llama nunca.** Los eventos del webhook se firman en local, y para
+  crear cobros y reembolsos se sustituye el cliente por uno de mentira que apunta con qué
+  se le llama: importe en céntimos, metadata con el pedido y método correcto. Lo que se
+  prueba es nuestro lado del contrato.
+
+Los tests quedan fuera de `tsconfig.json` a propósito, para que no acaben en `dist/`. Se
+analizan con `tsconfig.test.json`, que es el que usan `npm run verificar` y ESLint.
+
+`seed.ts` queda fuera de todo: no está en `tsconfig` ni lo revisa ESLint.
+
+**Lo que no está cubierto**: el cobro con PayPal, los pedidos (alta, confirmación,
+rechazo), usuarios, catálogo y disponibilidad.
 
 ### Comprobación funcional
 
@@ -682,6 +729,12 @@ Vercel
 
 `vercel.json` reescribe todo el tráfico (`/(.*)`) hacia `/api`, y Vercel descubre
 automáticamente `api/index.ts` como la función.
+
+**Región: `cdg1` (París).** Por defecto la función corría en `iad1` (Virginia), así que
+cada petición cruzaba el Atlántico dos veces: una para hablar con MongoDB Atlas, que está
+en París, y otra para servir imágenes desde R2 a través de `/api/media`. Medido antes del
+cambio: 0,6-0,8 s la primera vez que se pedía una imagen. Si algún día se mueve el clúster
+de Atlas, hay que mover también esta región: lo que importa es que estén juntos.
 
 > **Sobre `api/index.ts`.** Es una sola línea que reexporta la app. Parece un resto
 > suelto y no lo es: es lo único que crea el endpoint, y **no hay alternativa moderna**.

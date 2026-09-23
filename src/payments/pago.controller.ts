@@ -18,14 +18,17 @@ import {
 import { getStripe, getWebhookSecret } from './stripe.utils';
 import { firmaDeWebhookEsValida } from './paypal.utils';
 import {
+  anotarEstadoDelIntento,
   cerrarPagoDePayPal,
   esMetodoValido,
   iniciarConPayPal,
   iniciarConStripe,
   marcarPagado,
   motivoParaNoCobrar,
+  pedidoDelIntento,
   resolverUrlDeRetorno,
 } from './pago.service';
+import { registrarReembolsoExterno } from './reembolso.service';
 
 // POST /api/pedidos/:id/pago/iniciar
 // Arranca el cobro de un pedido ya confirmado con el metodo que pida el cliente.
@@ -177,9 +180,9 @@ export const stripeWebhook = async (req: Request, res: Response): Promise<void> 
     switch (evento.type) {
       case 'payment_intent.succeeded': {
         const intent = evento.data.object;
-        const orderId = intent.metadata?.orderId;
-        if (orderId) {
-          await marcarPagado(orderId, {
+        const order = await pedidoDelIntento(intent);
+        if (order) {
+          await marcarPagado(String(order._id), {
             referencia: intent.id,
             estado: intent.status,
             proveedor: 'stripe',
@@ -188,15 +191,41 @@ export const stripeWebhook = async (req: Request, res: Response): Promise<void> 
         break;
       }
 
-      case 'payment_intent.payment_failed': {
-        const intent = evento.data.object;
-        const orderId = intent.metadata?.orderId;
-        if (orderId) {
-          // El pedido sigue pagable: el cliente puede reintentar.
-          await Order.findByIdAndUpdate(orderId, {
-            'pago.estado': intent.status,
-          });
+      // Ninguno de los tres cierra el pedido: sigue siendo pagable y el cliente
+      // puede reintentar. Solo cambia en que punto esta el intento.
+      //
+      // `processing` es el pago asincrono de Bizum: el cliente ya ha confirmado
+      // en su banco, pero el dinero no esta. Hasta que llegue el `succeeded` no
+      // se reserva el horario en firme ni baja el stock.
+      //
+      // `canceled` es el intento caducado o cancelado desde el panel. Anotarlo
+      // importa porque al volver a pagar se reutiliza el intento guardado, y uno
+      // cancelado ya no admite pago.
+      case 'payment_intent.processing':
+      case 'payment_intent.payment_failed':
+      case 'payment_intent.canceled': {
+        await anotarEstadoDelIntento(evento.data.object);
+        break;
+      }
+
+      // Devolucion hecha desde el panel de Stripe, sin pasar por el nuestro.
+      // Sin esto el pedido seguiria figurando como cobrado y las unidades no
+      // volverian al catalogo.
+      case 'charge.refunded': {
+        const cargo = evento.data.object;
+        const intentId = typeof cargo.payment_intent === 'string' ? cargo.payment_intent : null;
+        if (!intentId) break;
+
+        const order = await Order.findOne({ 'pago.paymentIntentId': intentId });
+        if (!order) {
+          console.warn(`Reembolso de un cobro que no es de ningun pedido: ${intentId}`);
+          break;
         }
+
+        await registrarReembolsoExterno(order, {
+          reembolsoId: cargo.refunds?.data?.[0]?.id ?? cargo.id,
+          completo: cargo.amount_refunded >= cargo.amount,
+        });
         break;
       }
 
