@@ -575,16 +575,49 @@ serverless.
 
 ## 11. Tests
 
-Hay dos verificaciones, y ninguna necesita framework de pruebas: **no hay Jest ni
-Vitest declarados, ni ficheros `*.test.ts` o `*.spec.ts`.**
-
-### Comprobación estática
-
 ```bash
-npm run verificar    # tsc --noEmit && eslint . && prettier --check .
+npm test          # vitest run
+npm run test:watch
+npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier --check .
 ```
 
-Tipos, linter y formato. `seed.ts` queda fuera: no está en `tsconfig` ni la revisa ESLint.
+### Comprobación automática
+
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/` y hoy cubren un
+único dominio: el **webhook de Stripe**, que es por donde entra el dinero.
+
+```text
+test/
+├── setup/entorno.ts     Arranca MongoDB en memoria y fija las variables de entorno
+├── ayudas/
+│   ├── webhook.ts       Carga la app, firma eventos y los entrega como Stripe
+│   └── pedidos.ts       Pedidos y productos de prueba
+└── webhook/
+    ├── firma.test.ts            Autenticación: sin firma, firma falsa, otro secreto,
+    │                            evento viejo, cuerpo manipulado
+    ├── pago-completado.test.ts  payment_intent.succeeded
+    ├── pago-fallido.test.ts     payment_intent.payment_failed
+    ├── pago-expirado.test.ts    payment_intent.canceled
+    ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
+    └── reembolso.test.ts        charge.refunded
+```
+
+Dos decisiones que explican cómo están escritos:
+
+- **La firma se genera con el SDK de Stripe** (`generateTestHeaderString`), que calcula
+  el mismo HMAC que Stripe en sus servidores. Así se ejercita la verificación real y no
+  una imitación.
+- **La base de datos es de verdad, en memoria.** Un test de cobro que no comprueba que el
+  pedido quedó guardado como pagado no prueba lo que importa. Nunca se llama a la API de
+  Stripe: la clave del entorno de pruebas es de juguete y solo se usa para firmar.
+
+Los tests quedan fuera de `tsconfig.json` a propósito, para que no acaben en `dist/`. Se
+analizan con `tsconfig.test.json`, que es el que usan `npm run verificar` y ESLint.
+
+`seed.ts` queda fuera de todo: no está en `tsconfig` ni lo revisa ESLint.
+
+**Lo que no está cubierto**: iniciar un pago, la captura de PayPal y su webhook, pedidos,
+usuarios, catálogo y disponibilidad.
 
 ### Comprobación funcional
 
