@@ -1,15 +1,18 @@
 /**
- * Entorno de los tests: una MongoDB de verdad, en memoria, y las variables que
- * `validateEnvironment()` exige al importar la app.
+ * Entorno de cada fichero de test: conexión a la MongoDB en memoria y las
+ * variables que `validateEnvironment()` exige al importar la app.
  *
  * Las variables se fijan aquí, antes de que ningún test importe `index.ts`.
  * `dotenv` no pisa lo que ya existe en `process.env`, así que el `.env` real del
  * proyecto no se cuela en las pruebas.
+ *
+ * Cada fichero usa su propia base de datos dentro del mismo servidor: los
+ * ficheros corren en paralelo, y vaciar colecciones compartidas haría que unos
+ * se borraran los datos a otros.
  */
 
-import { afterAll, afterEach, beforeAll } from 'vitest';
+import { afterAll, afterEach, beforeAll, inject } from 'vitest';
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 
 /** Secreto con el que se firman los eventos falsos de Stripe en los tests. */
 export const SECRETO_WEBHOOK = 'whsec_secreto_de_pruebas';
@@ -27,11 +30,9 @@ process.env.ALLOWED_ORIGINS = 'https://tienda.example.test';
 process.env.STRIPE_SECRET_KEY = 'sk_test_de_pruebas';
 process.env.STRIPE_WEBHOOK_SECRET = SECRETO_WEBHOOK;
 
-let servidorMongo: MongoMemoryServer;
-
 beforeAll(async () => {
-  servidorMongo = await MongoMemoryServer.create();
-  process.env.DB_URL = servidorMongo.getUri('arturosalas_test');
+  const base = `arturosalas_test_${process.env.VITEST_WORKER_ID ?? '1'}_${process.pid}`;
+  process.env.DB_URL = new URL(base, inject('direccionMongo')).toString();
 
   // La app conecta de forma perezosa, en la primera petición. Los tests crean
   // pedidos antes de esa petición, así que la conexión se abre aquí; `connectDB`
@@ -48,5 +49,4 @@ afterEach(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await servidorMongo?.stop();
 });

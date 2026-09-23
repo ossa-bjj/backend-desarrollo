@@ -40,13 +40,15 @@ export const crearPedido = async (
     items?: IOrderItem[];
     total?: number;
     pago?: IOrder['pago'];
+    /** Dueño del pedido. Importa en todo lo que pasa por `isAuth`. */
+    user?: Types.ObjectId;
   } = {},
 ): Promise<PedidoDePrueba> => {
   const { Order } = await import('../../src/orders/order.model');
   const items = opciones.items ?? [lineaDeProducto()];
 
   return Order.create({
-    user: new Types.ObjectId(),
+    user: opciones.user ?? new Types.ObjectId(),
     items,
     total: opciones.total ?? items.reduce((suma, item) => suma + item.price * item.quantity, 0),
     status: opciones.estado ?? OrderStatus.PENDIENTE,
