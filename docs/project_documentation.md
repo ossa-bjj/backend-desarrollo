@@ -128,7 +128,7 @@ backend/
 │   └── project_documentation.md   Este documento
 ├── eslint.config.mjs         Reglas de linter
 ├── .prettierrc.json          Formato
-├── vercel.json               Reescritura de todo el tráfico hacia /api
+├── vercel.json               Reescritura hacia /api y región de la función (cdg1)
 └── .env.example              Plantilla de variables
 ```
 
@@ -729,6 +729,12 @@ Vercel
 
 `vercel.json` reescribe todo el tráfico (`/(.*)`) hacia `/api`, y Vercel descubre
 automáticamente `api/index.ts` como la función.
+
+**Región: `cdg1` (París).** Por defecto la función corría en `iad1` (Virginia), así que
+cada petición cruzaba el Atlántico dos veces: una para hablar con MongoDB Atlas, que está
+en París, y otra para servir imágenes desde R2 a través de `/api/media`. Medido antes del
+cambio: 0,6-0,8 s la primera vez que se pedía una imagen. Si algún día se mueve el clúster
+de Atlas, hay que mover también esta región: lo que importa es que estén juntos.
 
 > **Sobre `api/index.ts`.** Es una sola línea que reexporta la app. Parece un resto
 > suelto y no lo es: es lo único que crea el endpoint, y **no hay alternativa moderna**.
