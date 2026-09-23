@@ -45,6 +45,24 @@ export default tseslint.config(
     },
   },
 
+  // Los tests quedan fuera de `tsconfig.json` a proposito: ese es el proyecto
+  // que compila el build, y `dist/` no debe llevarlos. Para poder analizarlos
+  // con tipos se usa `tsconfig.test.json`, que si los incluye.
+  {
+    files: ['test/**/*.ts', 'vitest.config.mts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: './tsconfig.test.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // En un test, una asercion no nula senala el fallo en el sitio exacto.
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+
   // Va el ultimo: apaga las reglas de estilo que ya gobierna Prettier.
   prettier,
 );
