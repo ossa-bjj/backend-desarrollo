@@ -115,6 +115,17 @@ pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
 
 ### Eventos de Stripe que se escuchan
 
+> **La URL que hay que registrar en el panel de Stripe es la ruta completa**, con `/pedidos`
+> dentro:
+>
+> ```
+> https://<dominio-del-backend>/api/pedidos/webhook
+> ```
+>
+> `/api/webhook` **no existe** y responde `404`. Un endpoint mal escrito no da ningún aviso
+> en el panel: se queda con cero entregas y los pedidos nunca pasan a `pagado`. Ya ocurrió
+> una vez. Después de registrarlo, comprueba en _Entregas de eventos_ que el contador sube.
+
 | Evento                          | Qué hace                                                                                                                      |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `payment_intent.succeeded`      | Marca el pedido como **pagado**, consolida los horarios y descuenta stock. Es el único que cierra un cobro.                   |
@@ -122,9 +133,19 @@ pasarela aparte: es un método de Stripe, y hay que activarlo en su panel.
 | `payment_intent.payment_failed` | Anota el estado. El pedido sigue pendiente y pagable: el cliente puede reintentar.                                            |
 | `payment_intent.canceled`       | El intento caducó o se canceló desde el panel. Anota el estado para que no se reutilice un intento muerto al volver a pagar.  |
 | `charge.refunded`               | Devolución hecha **desde el panel de Stripe**. Anota el reembolso; si es completa, cancela el pedido y devuelve las unidades. |
+| `charge.dispute.created`        | El cliente reclama el cobro a su banco. Lo anota en el pedido y lo deja en el log como error. No cambia el estado del pedido. |
+| `charge.dispute.closed`         | Desenlace de la reclamación (`won`, `lost`...). Actualiza lo anotado y marca cuándo se cerró.                                 |
 
 Cualquier otro evento se acepta con `200` sin hacer nada: Stripe reintenta lo que no
-recibe un 2xx, y un aviso que no nos interesa no mejora por repetirse.
+recibe un 2xx, y un aviso que no nos interesa no mejora por repetirse. En particular,
+**los eventos `checkout.session.*` no pintan nada aquí**: son de Stripe Checkout, la
+pasarela alojada, y este proyecto cobra con PaymentIntents en un formulario propio.
+
+**Una reclamación no cancela el pedido ni devuelve stock por su cuenta.** Stripe retiene el
+importe y abre un plazo para responder con pruebas, pero se puede ganar, y la mercancía
+puede estar ya enviada: qué hacer con el pedido lo decide una persona. El webhook solo deja
+constancia, en `pago.disputa`, para que se vea donde se miran los pedidos y no solo en el
+panel de Stripe.
 
 Los avisos que no son el cobro **nunca tocan un pedido ya pagado**. Stripe no garantiza el
 orden de entrega y reintenta durante horas: un `payment_failed` que llega tarde no puede
@@ -153,8 +174,11 @@ fijo que hace que PayPal devuelva la que ya hizo en vez de repetirla.
 Los dos webhooks se autentican distinto, y por eso quieren el cuerpo distinto:
 
 - **Stripe** firma con un secreto compartido y necesita los bytes **sin parsear**. De ahí el
-  `express.raw` sobre esa ruta antes de `express.json()` en `index.ts`, montado con `post`
-  y no con `use` — `use` casa por prefijo y le habría robado el cuerpo al de PayPal.
+  middleware `cuerpoCrudo` sobre esa ruta antes de `express.json()` en `index.ts`, montado
+  con `post` y no con `use` — `use` casa por prefijo y le habría robado el cuerpo al de
+  PayPal. **No es `express.raw`**: detrás de Vercel no lee nada, porque Vercel se lee el
+  cuerpo antes y body-parser 2 da la petición por leída. Con `express.raw` se rechazaban
+  todas las firmas en producción.
 - **PayPal** no firma con un secreto: hay que preguntarle a él si la firma es buena,
   mandándole las cabeceras `paypal-*` junto al evento. Ese cuerpo sí llega parseado.
   Sin `PAYPAL_WEBHOOK_ID` no hay forma de verificar nada, así que el aviso **se rechaza**:
