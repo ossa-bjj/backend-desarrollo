@@ -205,6 +205,16 @@ estado. Si la devolución falla, el pedido se queda como estaba y responde `409`
 figura cancelado con el importe retenido. La referencia y la fecha quedan guardadas en
 `pago.reembolsoId` y `pago.reembolsadoEn`. Vive en `src/payments/reembolso.service.ts`.
 
+**Una devolución hecha desde el panel de Stripe también llega aquí**, por el webhook
+(`charge.refunded`): anota el reembolso y, si es del importe completo, cancela el pedido y
+repone el stock. Sin eso, devolver el dinero desde Stripe dejaba el pedido figurando como
+cobrado.
+
+**Si el cliente reclama el cobro a su banco**, Stripe retiene el importe y avisa por el
+webhook. Queda anotado en `pago.disputa`, y ahí se queda: el pedido no se cancela ni se
+repone stock automáticamente, porque una reclamación se puede ganar y la mercancía puede
+estar ya enviada. Esa decisión es de una persona.
+
 Un pedido **no se borra desde la aplicación**: es el registro de un cobro, y cancelar es la
 forma de retirarlo. La ruta `DELETE /api/pedidos/:id` existe y es solo de admin, pero el
 panel no la ofrece.
@@ -357,7 +367,9 @@ Order
 ├── total           calculado por el servidor
 ├── status          uno de los ocho estados
 ├── pago            { proveedor, paymentIntentId, estado, pagadoEn,
-│                     reembolsoId, reembolsadoEn }
+│                     reembolsoId, reembolsadoEn,
+│                     disputa { id, estado, motivo, importe,
+│                               abiertaEn, cerradaEn } }
 │                   `proveedor` guarda el método que eligió el cliente
 │                   (`stripe` · `bizum` · `paypal`), y `paymentIntentId`, la
 │                   referencia del cobro en ese proveedor: el PaymentIntent de
@@ -596,15 +608,18 @@ test/
 │   ├── webhook.ts       Carga la app, firma eventos y los entrega como Stripe
 │   ├── pedidos.ts       Pedidos y productos de prueba
 │   ├── sesion.ts        Tokens de cliente y de admin
-│   └── stripe-simulado.ts   SDK de Stripe de mentira, que apunta cómo se le llama
+│   ├── stripe-simulado.ts   SDK de Stripe de mentira, que apunta cómo se le llama
+│   └── vercel.ts        Servidor que trata la petición como el runtime de Vercel
 ├── webhook/
 │   ├── firma.test.ts            Autenticación: sin firma, firma falsa, otro secreto,
 │   │                            evento viejo, cuerpo manipulado
-│   ├── pago-completado.test.ts  payment_intent.succeeded
+│   ├── vercel.test.ts           El webhook detrás de Vercel, que lee el cuerpo antes
+│   ├── pago-completado.test.ts  payment_intent.succeeded, y avisos que llegan tarde
 │   ├── pago-fallido.test.ts     payment_intent.payment_failed
 │   ├── pago-expirado.test.ts    payment_intent.canceled
 │   ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
-│   └── reembolso.test.ts        charge.refunded
+│   ├── reembolso.test.ts        charge.refunded
+│   └── disputa.test.ts          charge.dispute.created y charge.dispute.closed
 └── pagos/
     ├── iniciar-pago.test.ts         POST /pedidos/:id/pago/iniciar: permisos, estados
     │                                cobrables y qué se le pide a Stripe
@@ -730,6 +745,49 @@ Vercel
 `vercel.json` reescribe todo el tráfico (`/(.*)`) hacia `/api`, y Vercel descubre
 automáticamente `api/index.ts` como la función.
 
+### Puesta en marcha de Stripe
+
+Dos cosas que no están en el código y sin las cuales el cobro no funciona, por mucho que
+el servidor esté bien desplegado:
+
+**1. Variables en el panel de Vercel**, no en el repositorio: `STRIPE_SECRET_KEY` y
+`STRIPE_WEBHOOK_SECRET`, en el entorno de producción. Si falta la primera, iniciar un pago
+responde `500 Error iniciando el pago`; el detalle real (`Falta STRIPE_SECRET_KEY...`) solo
+aparece en los logs de Vercel, porque el mensaje que viaja al cliente es genérico a
+propósito.
+
+**2. El endpoint del webhook**, en _Developers → Webhooks_, con **la URL completa**:
+
+```
+https://<dominio-del-backend>/api/pedidos/webhook
+```
+
+Con `/pedidos` dentro. `/api/webhook` no existe y devuelve `404`, y un endpoint mal escrito
+**no avisa de nada**: se queda con cero entregas, y los pedidos que el cliente paga nunca
+pasan a `pagado`. Ya pasó una vez, el 22-09-2026, y estuvo así hasta que se miró el
+contador de entregas del panel.
+
+Eventos a marcar, que son los que el servidor atiende (ver la tabla en
+`api-endpoints.md`):
+
+```text
+payment_intent.succeeded        payment_intent.canceled       charge.dispute.created
+payment_intent.processing       charge.refunded               charge.dispute.closed
+payment_intent.payment_failed
+```
+
+Los `checkout.session.*` **no**: son de Stripe Checkout, que este proyecto no usa.
+
+El secreto de firma es **de cada endpoint**: si se borra y se crea otro en vez de editar el
+que hay, cambia, y hasta actualizarlo en Vercel todos los avisos se rechazan por firma no
+válida.
+
+Modo prueba y modo producción llevan listas separadas: hay que registrar el endpoint en los
+dos, con su clave y su secreto correspondientes.
+
+Para comprobarlo: el contador de _Entregas de eventos_ del panel tiene que subir con cada
+pago, y la respuesta del servidor debe ser `200 {"received": true}`.
+
 **Región: `cdg1` (París).** Por defecto la función corría en `iad1` (Virginia), así que
 cada petición cruzaba el Atlántico dos veces: una para hablar con MongoDB Atlas, que está
 en París, y otra para servir imágenes desde R2 a través de `/api/media`. Medido antes del
@@ -826,9 +884,16 @@ y se guarda **después** de marcar `pagado`. El cobro es un hecho aunque el stoc
 y esconderlo no lo desharía.
 
 **Qué hay que saber para tocarlo.** El webhook de Stripe necesita el cuerpo **sin parsear**
-para verificar la firma: por eso `index.ts` monta `express.raw()` en
-`/api/pedidos/webhook` **antes** de `express.json()`. Ese orden no es cosmético; al
-revés, la firma no valida nunca. Y se monta con `app.post`, no con `app.use`: `use` casa
+para verificar la firma: por eso `index.ts` monta `cuerpoCrudo`
+(`src/shared/cuerpoCrudo.middleware.ts`) en `/api/pedidos/webhook` **antes** de
+`express.json()`. Ese orden no es cosmético; al revés, la firma no valida nunca.
+
+**No se puede cambiar por `express.raw`**, aunque parezca lo mismo. El runtime de Vercel
+lee el cuerpo entero antes que la app y deja la petición marcada como leída; body-parser 2
+—el de Express 5— ve la marca y no hace nada, y a la verificación le llega un objeto. Así
+estuvo el webhook hasta el 24-09-2026: todas las firmas rechazadas en producción, con el
+secreto correcto, y todo en verde en local. `test/webhook/vercel.test.ts` reproduce lo que
+hace Vercel para que no vuelva a pasar. Y se monta con `app.post`, no con `app.use`: `use` casa
 por prefijo, así que le entregaría también un Buffer al webhook de PayPal, que cuelga de
 `/webhook/paypal` y sí quiere el cuerpo parseado.
 
@@ -958,12 +1023,16 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 
 ### Bloquean el uso en producción
 
-- [ ] **Webhook de Stripe sin registrar.** `STRIPE_WEBHOOK_SECRET` está vacía. La clave
-      secreta sí está, así que **se cobra de verdad**, pero nadie avisa al servidor: el
-      pedido se queda en `pendiente` con el dinero ya cargado. Hay que dar de alta el
-      endpoint en el panel apuntando a `/api/pedidos/webhook`, suscrito a
-      `payment_intent.succeeded` y `payment_intent.payment_failed`, y copiar su secreto de
-      firma. — `.env`, `src/payments/pago.controller.ts`
+- [ ] **Confirmar en producción que el webhook entrega.** La URL del endpoint ya es la
+      correcta y el rechazo de firmas en Vercel está corregido en código (`cuerpoCrudo`).
+      Falta verlo tras desplegar: en el panel de Stripe, el contador de _Entregas de
+      eventos_ tiene que subir y los avisos pendientes tienen que pasar a entregados. Falta
+      también marcar `charge.dispute.closed` en el endpoint. — panel de Stripe
+- [ ] **`500 Error iniciando el pago` en producción, sin explicar.** Es lo que responde el
+      servidor cuando revienta al crear el intento. Sin `STRIPE_SECRET_KEY` sale idéntico,
+      pero no se ha podido confirmar que sea eso. El detalle real sale en los logs de
+      Vercel, en la línea que empieza por `Error iniciando el pago:`.
+      — panel de Vercel, `src/payments/pago.controller.ts`
 - [ ] **PayPal sin credenciales.** `PAYPAL_CLIENT_ID` y `PAYPAL_CLIENT_SECRET` están
       vacías. El código de los dos caminos (captura y webhook) está escrito y nunca se ha
       ejercitado. El botón lo ofrece el frontend. — `.env`, `src/payments/paypal.utils.ts`
@@ -980,9 +1049,10 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 - [ ] **El panel no puede borrar un pedido.** `DELETE /api/pedidos/:id` existe y es de
       admin, pero el frontend no tiene la llamada. Es coherente con la política —un pedido
       se cancela, no se borra—, así que solo se anota. — `src/orders/order.routes.ts`
-- [ ] **Sin tests automatizados.** No hay framework declarado en `package.json` ni ficheros
-      de prueba. Con tres métodos de pago y dos caminos de confirmación, la verificación
-      funcional depende de ejercitar la API a mano. — `package.json`
+- [ ] **Tests solo del cobro con Stripe.** Hay 95 tests (Vitest + Supertest + MongoDB en
+      memoria) que cubren el webhook, el inicio del cobro, el reembolso y los importes. No
+      hay ninguno de pedidos, usuarios, catálogo, disponibilidad ni del cobro con PayPal.
+      — `test/`
 
 ### Cerrados
 

@@ -227,6 +227,50 @@ export const anotarEstadoDelIntento = async (intent: {
   await order.save();
 };
 
+/**
+ * Anota en el pedido una reclamacion del cliente a su banco.
+ *
+ * Stripe retiene el importe en cuanto se abre y da un plazo para responder con
+ * pruebas; si nadie responde, se pierde. Es lo mas urgente que puede llegar por
+ * el webhook, y hasta ahora no llegaba a ninguna parte: quedaba solo en el panel
+ * de Stripe, que no es donde se miran los pedidos.
+ *
+ * Deliberadamente NO cambia el estado del pedido ni devuelve stock. Una
+ * reclamacion se puede ganar, y la mercancia puede estar ya enviada: eso lo
+ * decide una persona, no un webhook. Aqui solo se deja constancia.
+ *
+ * Idempotente por el mismo motivo de siempre: Stripe reintenta. El cierre pisa
+ * al alta porque llega despues y trae el desenlace.
+ */
+export const registrarDisputa = async (
+  order: Pedido,
+  disputa: { id: string; estado: string; motivo?: string; importeEnCentimos: number; cerrada: boolean },
+): Promise<void> => {
+  const anterior = order.pago?.disputa;
+  if (anterior?.id === disputa.id && anterior.estado === disputa.estado) return;
+
+  // Por ruta y no reconstruyendo `pago` entero: lo que ya hay ahi —el cobro, un
+  // reembolso anterior— tiene que seguir estando.
+  order.set('pago.disputa', {
+    id: disputa.id,
+    estado: disputa.estado,
+    motivo: disputa.motivo,
+    importe: disputa.importeEnCentimos / 100,
+    abiertaEn: anterior?.abiertaEn ?? new Date(),
+    cerradaEn: disputa.cerrada ? new Date() : anterior?.cerradaEn,
+  });
+
+  await order.save();
+
+  // El log es la unica alarma que hay hoy. Mientras no haya aviso por correo,
+  // esto es lo que queda si nadie entra al panel.
+  if (!disputa.cerrada) {
+    console.error(
+      `RECLAMACION abierta sobre el pedido ${String(order._id)} (${disputa.id}, ${disputa.estado}): hay un plazo para responder con pruebas`,
+    );
+  }
+};
+
 /** Linea que se cobro sin que quedaran existencias de su talla. */
 type IncidenciaStock = { codigoArticulo: number; talla?: string; solicitadas: number; detectadaEn: Date };
 
@@ -302,7 +346,13 @@ export const marcarPagado = async (
     return;
   }
 
-  if (order.status === OrderStatus.PAGADO) return;
+  // Se mira si el cobro YA SE REGISTRO, no el estado actual: el estado sigue
+  // avanzando despues de cobrar —preparando, enviado, o cancelado si se
+  // reembolsa—, y Stripe reintenta el aviso durante dias. Mirando solo `status`,
+  // un `succeeded` que llegaba tarde devolvia a "pagado" un pedido ya enviado o
+  // reembolsado y descontaba el stock otra vez. `pagadoEn` se escribe una sola
+  // vez y no cambia.
+  if (order.status === OrderStatus.PAGADO || order.pago?.pagadoEn) return;
 
   order.status = OrderStatus.PAGADO;
   order.pago = {

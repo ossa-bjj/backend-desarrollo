@@ -65,14 +65,8 @@ export const registrarReembolsoExterno = async (
 ): Promise<void> => {
   if (order.pago?.reembolsoId) return;
 
-  order.pago = {
-    proveedor: order.pago?.proveedor ?? 'stripe',
-    paymentIntentId: order.pago?.paymentIntentId ?? '',
-    estado: order.pago?.estado ?? '',
-    pagadoEn: order.pago?.pagadoEn,
-    reembolsoId: reembolso.reembolsoId,
-    reembolsadoEn: new Date(),
-  };
+  order.set('pago.reembolsoId', reembolso.reembolsoId);
+  order.set('pago.reembolsadoEn', new Date());
 
   if (reembolso.completo) {
     await devolverStock(order);
@@ -103,7 +97,10 @@ export const reembolsarPedido = async (order: Pedido): Promise<ResultadoReembols
         ? await reembolsarCapturaPayPal(referencia)
         : (await getStripe().refunds.create({ payment_intent: referencia })).id;
 
-    order.pago = { ...order.pago!, reembolsoId, reembolsadoEn: new Date() };
+    // Por ruta y no reconstruyendo `pago` entero: asi no se pierde nada de lo
+    // que ya hubiera ahi —el cobro, una reclamacion abierta— al anotar esto.
+    order.set('pago.reembolsoId', reembolsoId);
+    order.set('pago.reembolsadoEn', new Date());
     await devolverStock(order);
 
     return { ok: true, reembolsoId };

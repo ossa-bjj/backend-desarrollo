@@ -143,6 +143,23 @@ Ese comando imprime un código que empieza por `whsec_`: ese es tu
 
 Para probar, la tarjeta `4242 4242 4242 4242`, cualquier fecha futura y cualquier CVC.
 
+### En producción
+
+El aviso no llega solo: hay que dar de alta el endpoint en el panel de Stripe, en
+_Developers → Webhooks_, con **la ruta completa**:
+
+```
+https://<dominio-del-backend>/api/pedidos/webhook
+```
+
+Con `/pedidos` dentro. `/api/webhook` no existe y devuelve `404`. Si te equivocas, no hay
+ningún aviso: el endpoint se queda con cero entregas y los pedidos pagados nunca pasan a
+`pagado`. Compruébalo en _Entregas de eventos_ después de registrarlo.
+
+Los eventos que hay que marcar y qué hace cada uno están en
+[`docs/api-endpoints.md`](docs/api-endpoints.md). El secreto de firma es de cada endpoint:
+si borras uno y creas otro, cambia, y hay que actualizarlo donde esté desplegado.
+
 ---
 
 ## 📖 ¿Quieres la chicha?
