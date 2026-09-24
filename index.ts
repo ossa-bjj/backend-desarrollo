@@ -12,6 +12,7 @@ import noticiaRouter from './src/news/noticia.routes';
 import { getFromR2, keyFromPublicUrl } from './src/shared/r2.utils';
 import { validateEnvironment } from './src/shared/env';
 import { corsOptions, esOrigenPermitido, registrarEstadoCors } from './src/shared/cors';
+import { cuerpoCrudo } from './src/shared/cuerpoCrudo.middleware';
 
 validateEnvironment();
 
@@ -28,10 +29,13 @@ app.set('trust proxy', 1);
 // Buffer sin parsear. express.json() detecta que el cuerpo ya se leyo y lo
 // respeta, por eso este orden importa.
 //
+// No es `express.raw`: detras de Vercel no lee nada y el webhook rechazaba
+// todas las firmas. El porque esta en `cuerpoCrudo.middleware.ts`.
+//
 // Se monta con `post` y no con `use` a proposito: `use` casa por prefijo, y
 // entonces el webhook de PayPal —que cuelga de /webhook/paypal y si quiere el
 // cuerpo parseado— recibiria tambien un Buffer.
-app.post('/api/pedidos/webhook', express.raw({ type: 'application/json' }));
+app.post('/api/pedidos/webhook', cuerpoCrudo);
 app.use(express.json());
 
 // --- CORS ---
