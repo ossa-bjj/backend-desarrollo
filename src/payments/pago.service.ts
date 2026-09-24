@@ -302,7 +302,13 @@ export const marcarPagado = async (
     return;
   }
 
-  if (order.status === OrderStatus.PAGADO) return;
+  // Se mira si el cobro YA SE REGISTRO, no el estado actual: el estado sigue
+  // avanzando despues de cobrar —preparando, enviado, o cancelado si se
+  // reembolsa—, y Stripe reintenta el aviso durante dias. Mirando solo `status`,
+  // un `succeeded` que llegaba tarde devolvia a "pagado" un pedido ya enviado o
+  // reembolsado y descontaba el stock otra vez. `pagadoEn` se escribe una sola
+  // vez y no cambia.
+  if (order.status === OrderStatus.PAGADO || order.pago?.pagadoEn) return;
 
   order.status = OrderStatus.PAGADO;
   order.pago = {

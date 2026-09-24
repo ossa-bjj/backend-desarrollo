@@ -10,7 +10,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { Express } from 'express';
 import { Types } from 'mongoose';
 import { OrderStatus } from '../../src/orders/order.model';
-import { cargarApp, entregarEvento, evento, paymentIntent } from '../ayudas/webhook';
+import { cargarApp, cargo, entregarEvento, evento, paymentIntent } from '../ayudas/webhook';
 import {
   crearPedido,
   crearProducto,
@@ -89,6 +89,48 @@ describe('webhook de Stripe · pago completado', () => {
     expect(segunda.status).toBe(200);
     expect((await releerPedido(pedido._id)).status).toBe(OrderStatus.PAGADO);
     expect(await stockDeTalla(1011, 'M')).toBe(2);
+  });
+
+  // Encontrado con eventos reales de Stripe: el estado del pedido sigue avanzando
+  // después de cobrar, y un aviso que llega tarde no puede hacerlo retroceder.
+  it.each([OrderStatus.PREPARANDO, OrderStatus.ENVIADO, OrderStatus.ENTREGADO])(
+    'un aviso que llega tarde no devuelve a pagado un pedido ya %s',
+    async (estado) => {
+      await crearProducto({ tallas: [{ talla: 'M', stock: 3 }] });
+      const pedido = await crearPedido({ items: [lineaDeProducto({ quantity: 1, talla: 'M' })] });
+
+      await entregarEvento(app, pagoCompletado(String(pedido._id)));
+      const cobrado = await releerPedido(pedido._id);
+      cobrado.status = estado;
+      await cobrado.save();
+
+      await entregarEvento(app, pagoCompletado(String(pedido._id)));
+
+      expect((await releerPedido(pedido._id)).status).toBe(estado);
+      expect(await stockDeTalla(1011, 'M')).toBe(2);
+    },
+  );
+
+  it('un aviso que llega después de reembolsar no vuelve a cobrar el pedido', async () => {
+    await crearProducto({ tallas: [{ talla: 'M', stock: 3 }] });
+    const pedido = await crearPedido({ items: [lineaDeProducto({ quantity: 1, talla: 'M' })] });
+
+    await entregarEvento(app, pagoCompletado(String(pedido._id)));
+    await entregarEvento(
+      app,
+      evento(
+        'charge.refunded',
+        cargo({ paymentIntentId: 'pi_completado', importe: 5000, reembolsado: 5000 }),
+      ),
+    );
+    expect((await releerPedido(pedido._id)).status).toBe(OrderStatus.CANCELADO);
+    expect(await stockDeTalla(1011, 'M')).toBe(3);
+
+    // Stripe reintenta durante días: el `succeeded` puede llegar otra vez.
+    await entregarEvento(app, pagoCompletado(String(pedido._id)));
+
+    expect((await releerPedido(pedido._id)).status).toBe(OrderStatus.CANCELADO);
+    expect(await stockDeTalla(1011, 'M')).toBe(3);
   });
 
   it('conserva el método que eligió el cliente: un cobro de Bizum no pasa a decir tarjeta', async () => {
