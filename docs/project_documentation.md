@@ -747,6 +747,9 @@ automáticamente `api/index.ts` como la función.
 
 ### Puesta en marcha de Stripe
 
+> La lista de pasos para desplegar, comprobar, probar y revisar logs está en
+> [`paso-a-produccion-pagos.md`](paso-a-produccion-pagos.md). Aquí va el porqué.
+
 Dos cosas que no están en el código y sin las cuales el cobro no funciona, por mucho que
 el servidor esté bien desplegado:
 
