@@ -75,6 +75,28 @@ export interface IOrder {
      */
     reembolsoId?: string;
     reembolsadoEn?: Date;
+    /**
+     * Reclamacion del cliente a su banco sobre este cobro.
+     *
+     * Mientras esta abierta, Stripe retiene el importe y hay un plazo para
+     * responder con pruebas; pasado ese plazo se pierde sin mas. Por eso vive en
+     * el pedido y no solo en el panel de Stripe: quien lleva los pedidos tiene
+     * que verlo donde mira todos los dias.
+     *
+     * No cambia el estado del pedido por su cuenta. Una reclamacion se puede
+     * ganar, y la mercancia puede estar ya enviada: cancelar y devolver stock
+     * automaticamente decidiria por una persona algo que no es automatico.
+     */
+    disputa?: {
+      id: string;
+      /** Estado tal cual lo da Stripe: needs_response, under_review, won, lost... */
+      estado: string;
+      motivo?: string;
+      /** Importe reclamado, en euros. Puede no ser el total del pedido. */
+      importe?: number;
+      abiertaEn: Date;
+      cerradaEn?: Date;
+    };
   };
   /**
    * Lineas que se cobraron sin existencias suficientes.
@@ -156,6 +178,14 @@ const OrderSchema = new Schema<IOrder>(
       pagadoEn: { type: Date },
       reembolsoId: { type: String, trim: true },
       reembolsadoEn: { type: Date },
+      disputa: {
+        id: { type: String, trim: true },
+        estado: { type: String, trim: true },
+        motivo: { type: String, trim: true },
+        importe: { type: Number },
+        abiertaEn: { type: Date },
+        cerradaEn: { type: Date },
+      },
     },
     incidenciasStock: {
       type: [

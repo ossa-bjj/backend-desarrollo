@@ -26,6 +26,7 @@ import {
   marcarPagado,
   motivoParaNoCobrar,
   pedidoDelIntento,
+  registrarDisputa,
   resolverUrlDeRetorno,
 } from './pago.service';
 import { registrarReembolsoExterno } from './reembolso.service';
@@ -205,6 +206,31 @@ export const stripeWebhook = async (req: Request, res: Response): Promise<void> 
       case 'payment_intent.payment_failed':
       case 'payment_intent.canceled': {
         await anotarEstadoDelIntento(evento.data.object);
+        break;
+      }
+
+      // El cliente ha reclamado el cobro a su banco. Stripe retiene el dinero y
+      // abre un plazo para responder con pruebas; pasado ese plazo se pierde.
+      // El cierre llega por el mismo camino y trae el desenlace.
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed': {
+        const disputa = evento.data.object;
+        const intentId = typeof disputa.payment_intent === 'string' ? disputa.payment_intent : null;
+        if (!intentId) break;
+
+        const order = await Order.findOne({ 'pago.paymentIntentId': intentId });
+        if (!order) {
+          console.warn(`Reclamacion sobre un cobro que no es de ningun pedido: ${intentId}`);
+          break;
+        }
+
+        await registrarDisputa(order, {
+          id: disputa.id,
+          estado: disputa.status,
+          motivo: disputa.reason,
+          importeEnCentimos: disputa.amount,
+          cerrada: evento.type === 'charge.dispute.closed',
+        });
         break;
       }
 
