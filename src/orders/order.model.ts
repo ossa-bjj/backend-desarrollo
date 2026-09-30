@@ -51,8 +51,33 @@ export interface IOrderItem {
   talla?: string;
 }
 
+/**
+ * Contacto de quien compro sin cuenta, tal y como lo dio al comprar.
+ *
+ * El pedido cuelga de su ficha (`user`, con rol `invitado`), pero guarda
+ * ademas esta copia: la ficha no se sobrescribe desde una compra anonima, asi
+ * que es el pedido el que dice a quien avisar de ESTE pedido. Los nombres de
+ * campo son los del perfil de `User` para no tener que traducir nada.
+ */
+export interface IDatosInvitado {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+}
+
 export interface IOrder {
+  /** Dueño del pedido: una cuenta o una ficha de invitado. */
   user: Types.ObjectId;
+  /** Solo en los pedidos de invitado. Es lo que los distingue. */
+  invitado?: IDatosInvitado;
+  /**
+   * Huella (SHA-256) de la clave con la que el invitado opera sobre su pedido:
+   * como no tiene sesion, es lo unico que demuestra que el pedido es suyo. La
+   * clave en claro solo se le entrega una vez, al crearlo; aqui no se guarda,
+   * igual que no se guarda una contrasena.
+   */
+  accesoInvitado?: string;
   items: IOrderItem[];
   total: number;
   status: OrderStatus;
@@ -112,9 +137,24 @@ export interface IOrder {
     solicitadas: number;
     detectadaEn: Date;
   }>;
+  /**
+   * Horarios que se cobraron cuando ya eran de otro pedido.
+   *
+   * Pasa si el cobro se confirma despues de caducar la retencion y alguien se
+   * ha llevado el hueco entre medias. Igual que `incidenciasStock`: el dinero
+   * esta cobrado y el horario no, y alguien tiene que verlo y decidir.
+   */
+  incidenciasHorario?: Array<{
+    slotId: string;
+    slotLabel?: string;
+    detectadaEn: Date;
+  }>;
   confirmadoEn?: Date;
   confirmadoPor?: Types.ObjectId;
   motivoRechazo?: string;
+  /** Los pone Mongoose (`timestamps: true`). */
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
@@ -147,6 +187,25 @@ const OrderSchema = new Schema<IOrder>(
       required: true,
       index: true,
     },
+    invitado: {
+      type: new Schema<IDatosInvitado>(
+        {
+          firstName: { type: String, required: true, trim: true },
+          lastName: { type: String, required: true, trim: true },
+          email: {
+            type: String,
+            required: true,
+            trim: true,
+            lowercase: true,
+            match: [/^\S+@\S+\.\S+$/, 'Introduce un correo válido'],
+          },
+          phone: { type: String, required: true, trim: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    accesoInvitado: { type: String, select: false },
     items: {
       type: [OrderItemSchema],
       required: true,
@@ -201,6 +260,19 @@ const OrderSchema = new Schema<IOrder>(
       ],
       default: [],
     },
+    incidenciasHorario: {
+      type: [
+        new Schema(
+          {
+            slotId: { type: String, required: true },
+            slotLabel: { type: String, trim: true },
+            detectadaEn: { type: Date, required: true, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     confirmadoEn: { type: Date },
     confirmadoPor: { type: Schema.Types.ObjectId, ref: 'User' },
     motivoRechazo: { type: String, trim: true },
@@ -210,6 +282,15 @@ const OrderSchema = new Schema<IOrder>(
     versionKey: false,
   },
 );
+
+// La huella de la clave no sale nunca en una respuesta, aunque quien cargo el
+// pedido la haya pedido con `+accesoInvitado` para comprobarla.
+OrderSchema.set('toJSON', {
+  transform: (_, ret) => {
+    delete ret.accesoInvitado;
+    return ret;
+  },
+});
 
 export const Order = model<IOrder>('Order', OrderSchema);
 

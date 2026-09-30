@@ -2,8 +2,23 @@ import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import type { IUser } from './user.model';
 import { User, UserRole, UserStatus } from './user.model';
-import { leerCriteriosUsuario, listarUsuarios } from './user.service';
-import { sendServerError, esAdmin, esDuenoOAdmin, leerObjectId } from '../shared/controller.utils';
+import { leerCriteriosUsuario, listarUsuarios, motivoParaRechazarUsername } from './user.service';
+import {
+  sendServerError,
+  esAdmin,
+  esDuenoOAdmin,
+  esDuplicado,
+  leerObjectId,
+} from '../shared/controller.utils';
+
+/**
+ * Las fichas de invitado solo nacen de una compra sin cuenta y solo dejan de
+ * serlo cuando su dueño demuestra que el correo es suyo. Cambiar el rol a mano
+ * saltaria esa prueba en las dos direcciones: convertiria en cuenta la ficha de
+ * cualquiera, o dejaria sin acceso a una cuenta de verdad.
+ */
+const RECHAZO_ROL_INVITADO =
+  'El rol de invitado no se asigna ni se quita a mano: la persona crea su cuenta con «¿Olvidaste tu contraseña?» y su correo.';
 
 // POST /api/users
 export const createUser = async (req: Request, res: Response): Promise<void> => {
@@ -22,9 +37,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       metadata,
     } = req.body;
 
-    const existingUser = await User.exists({ $or: [{ username }, { email }] });
-    if (existingUser) {
-      res.status(400).json({ error: 'Usuario o email ya registrado' });
+    // Texto, y no otra cosa: acaban en un filtro de Mongo.
+    if (typeof username !== 'string' || typeof email !== 'string') {
+      res.status(400).json({ error: 'Usuario y email son obligatorios' });
+      return;
+    }
+
+    const motivo = motivoParaRechazarUsername(username);
+    if (motivo) {
+      res.status(400).json({ error: motivo });
       return;
     }
 
@@ -33,8 +54,21 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // Una ficha de invitado nace de una compra sin cuenta, con su correo como
+    // usuario y sin contrasena. Hecha a mano no cumpliria ninguna de las dos.
+    if (role === UserRole.INVITADO) {
+      res.status(400).json({ error: RECHAZO_ROL_INVITADO });
+      return;
+    }
+
     if (status && !Object.values(UserStatus).includes(status)) {
       res.status(400).json({ error: 'Estado no válido' });
+      return;
+    }
+
+    const existingUser = await User.exists({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      res.status(400).json({ error: 'Usuario o email ya registrado' });
       return;
     }
 
@@ -54,6 +88,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
     res.status(201).json({ success: true, data: user });
   } catch (error) {
+    if (esDuplicado(error)) {
+      res.status(400).json({ error: 'Usuario o email ya registrado' });
+      return;
+    }
     sendServerError(res, 'Error creando usuario', error);
   }
 };
@@ -141,9 +179,52 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // Texto, y no otra cosa: acaban en un filtro de Mongo.
+    if (
+      (username !== undefined && typeof username !== 'string') ||
+      (email !== undefined && typeof email !== 'string')
+    ) {
+      res.status(400).json({ error: 'Usuario y email deben ser texto' });
+      return;
+    }
+
+    const actual = await User.findById(id).select('role username email');
+    if (!actual) {
+      res.status(404).json({ error: 'Usuario no encontrado' });
+      return;
+    }
+
+    const esFicha = actual.role === UserRole.INVITADO;
+
+    if (role !== undefined && role !== actual.role && (esFicha || role === UserRole.INVITADO)) {
+      res.status(400).json({ error: RECHAZO_ROL_INVITADO });
+      return;
+    }
+
+    // En una ficha el usuario ES el correo: se mueven juntos. Si se separaran,
+    // comprar con el correo viejo chocaria con la ficha por el usuario y diria
+    // que ese correo "ya tiene cuenta" sin tenerla.
+    const emailNuevo = email?.toLowerCase().trim();
+    let usernameNuevo = username?.toLowerCase().trim();
+    if (esFicha) {
+      const correoFinal = emailNuevo ?? actual.email;
+      if (usernameNuevo !== undefined && usernameNuevo !== actual.username && usernameNuevo !== correoFinal) {
+        res.status(400).json({ error: 'En una ficha de invitado el usuario es su correo' });
+        return;
+      }
+      // El usuario solo se toca si cambia el correo, y entonces lo sigue.
+      usernameNuevo = correoFinal !== actual.email ? correoFinal : undefined;
+    } else if (usernameNuevo !== undefined) {
+      const motivo = motivoParaRechazarUsername(usernameNuevo, actual.username);
+      if (motivo) {
+        res.status(400).json({ error: motivo });
+        return;
+      }
+    }
+
     const update: Partial<IUser> = {};
-    if (username !== undefined) update.username = username;
-    if (email !== undefined) update.email = email;
+    if (usernameNuevo !== undefined) update.username = usernameNuevo;
+    if (emailNuevo !== undefined) update.email = emailNuevo;
     if (role !== undefined) update.role = role;
     if (status !== undefined) update.status = status;
     if (profile !== undefined) update.profile = profile;
@@ -158,10 +239,13 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (username || email) {
+    if (update.username || update.email) {
       const existingUser = await User.exists({
         _id: { $ne: id },
-        $or: [...(username ? [{ username }] : []), ...(email ? [{ email }] : [])],
+        $or: [
+          ...(update.username ? [{ username: update.username }] : []),
+          ...(update.email ? [{ email: update.email }] : []),
+        ],
       });
 
       if (existingUser) {
@@ -181,6 +265,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
     res.status(200).json({ success: true, data: user });
   } catch (error) {
+    if (esDuplicado(error)) {
+      res.status(400).json({ error: 'Usuario o email ya registrado por otro usuario' });
+      return;
+    }
     sendServerError(res, 'Error actualizando usuario', error);
   }
 };
@@ -228,13 +316,22 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Ni un admin pone contrasena a una ficha de invitado: seria crear la cuenta
+    // de alguien sin que haya demostrado que el correo es suyo.
+    if (user.role === UserRole.INVITADO) {
+      res.status(400).json({ error: RECHAZO_ROL_INVITADO });
+      return;
+    }
+
     if (!esAdmin(req)) {
       if (!currentPassword) {
         res.status(400).json({ error: 'La contraseña actual es requerida' });
         return;
       }
 
-      const valid = await bcrypt.compare(currentPassword, user.password!);
+      // Sin hash guardado —una ficha de invitado— bcrypt lanzaria y saldria un
+      // 500. No hay contrasena actual que pueda coincidir.
+      const valid = user.password ? await bcrypt.compare(currentPassword, user.password) : false;
       if (!valid) {
         res.status(401).json({ error: 'Contraseña actual incorrecta' });
         return;

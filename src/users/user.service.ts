@@ -8,6 +8,23 @@ import { booleanoDeQuery, leerPaginacion, regexContiene, textoDeQuery } from '..
  * peticion y responde: los criterios y la consulta se resuelven aqui.
  */
 
+/**
+ * Motivo para no admitir un nombre de usuario, o `null` si vale.
+ *
+ * Un nombre con `@` queda reservado: en una ficha de invitado el nombre de
+ * usuario ES su correo. Si una cuenta pudiera llamarse como el correo de otra
+ * persona, le ocuparia ese nombre a su ficha y a su futura cuenta.
+ *
+ * `actual` es el nombre que ya tiene la persona: conservarlo siempre se admite,
+ * para no dejar sin poder guardar su perfil a quien ya lo tuviera asi de antes.
+ */
+export const motivoParaRechazarUsername = (username: string, actual?: string): string | null => {
+  const normalizado = username.toLowerCase().trim();
+  if (actual !== undefined && normalizado === actual) return null;
+  if (normalizado.includes('@')) return 'El nombre de usuario no puede contener «@»';
+  return null;
+};
+
 const LIMITE_POR_DEFECTO = 100;
 const LIMITE_MAXIMO = 500;
 

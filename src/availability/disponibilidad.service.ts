@@ -8,7 +8,36 @@ import { DisponibilidadModelo, EstadoSlot } from './disponibilidad.model';
  */
 const HORAS_RETENCION = 48;
 
-const calcularCaducidad = (): Date => new Date(Date.now() + HORAS_RETENCION * 60 * 60 * 1000);
+/**
+ * Horas para un pedido de invitado. Mucho menos que las 48 de un cliente con
+ * cuenta, a proposito: la compra sin cuenta es una ruta publica, y con 48 horas
+ * bastaria rotar correos inventados para tener la agenda entera bloqueada sin
+ * pagar nada. Un invitado paga en el momento; si tarda mas, la retencion se
+ * renueva al empezar a cobrar (`renovarRetencionParaCobrar`).
+ */
+export const HORAS_RETENCION_INVITADO = 1;
+
+/**
+ * Tope absoluto, contado desde que se creo el pedido, hasta el que se puede
+ * renovar la retencion de un invitado. Sin tope, llamar a "iniciar pago" cada
+ * cincuenta minutos —aunque nunca se pague— mantendria el hueco bloqueado para
+ * siempre. Para un cliente con cuenta el tope son las mismas 48 horas: renovar
+ * sirve para recuperar lo perdido dentro de ese plazo, no para alargarlo.
+ */
+const HORAS_MAXIMAS_RETENCION_INVITADO = 3;
+
+/** Horas de retencion segun quien hace el pedido. */
+export const horasDeRetencion = (esInvitado: boolean): number =>
+  esInvitado ? HORAS_RETENCION_INVITADO : HORAS_RETENCION;
+
+/** Hasta cuando, como mucho, puede un pedido retener sus horarios. */
+export const limiteDeRetencion = (creadoEn: Date, esInvitado: boolean): Date =>
+  new Date(
+    creadoEn.getTime() + (esInvitado ? HORAS_MAXIMAS_RETENCION_INVITADO : HORAS_RETENCION) * 60 * 60 * 1000,
+  );
+
+const calcularCaducidad = (horas: number = HORAS_RETENCION): Date =>
+  new Date(Date.now() + horas * 60 * 60 * 1000);
 
 /**
  * Libera las retenciones provisionales ya caducadas.
@@ -41,6 +70,7 @@ export const liberarRetencionesCaducadas = async (servicio?: number): Promise<nu
 export const retenerSlots = async (
   pedidoId: Types.ObjectId | string,
   slotIds: string[],
+  horas: number = HORAS_RETENCION,
 ): Promise<{ retenidos: string[]; ocupados: string[] }> => {
   const retenidos: string[] = [];
   const ocupados: string[] = [];
@@ -58,7 +88,7 @@ export const retenerSlots = async (
       {
         estado: EstadoSlot.OCUPADO,
         pedidoId,
-        retenidoHasta: calcularCaducidad(),
+        retenidoHasta: calcularCaducidad(horas),
       },
       { new: true },
     );
@@ -68,6 +98,122 @@ export const retenerSlots = async (
   }
 
   return { retenidos, ocupados };
+};
+
+/**
+ * Asegura los horarios de un pedido justo antes de cobrarlo.
+ *
+ * Una retencion provisional caduca aunque el pedido siga pagable. Sin esto, se
+ * podia cobrar un pedido cuyo hueco ya se habia soltado —o se habia llevado
+ * otro cliente— y quedaba pagado sin horario. Por cada hueco:
+ *
+ * - si es de este pedido y firme (ya confirmado), no se toca;
+ * - si es de este pedido y provisional, se le renueva el plazo;
+ * - si se solto y nadie lo ha cogido, se vuelve a retener;
+ * - si lo tiene otro pedido, se ha perdido.
+ *
+ * Nunca por encima de `limite`: pasado ese momento no se renueva ni se
+ * recupera nada, y un hueco que ya no tiene plazo vigente cuenta como perdido.
+ * Es lo que impide mantener un hueco bloqueado llamando aqui una y otra vez.
+ *
+ * Devuelve los que se han perdido. Quien llama no debe cobrar si hay alguno.
+ */
+export const renovarRetencionParaCobrar = async (
+  pedidoId: Types.ObjectId,
+  slotIds: string[],
+  horas: number,
+  limite: Date,
+): Promise<{ perdidos: string[]; plazoAgotado: boolean }> => {
+  const perdidos: string[] = [];
+  const ahora = new Date();
+  const plazoAgotado = ahora >= limite;
+  const hasta = new Date(Math.min(calcularCaducidad(horas).getTime(), limite.getTime()));
+
+  for (const slotId of slotIds) {
+    if (!Types.ObjectId.isValid(slotId)) {
+      perdidos.push(slotId);
+      continue;
+    }
+
+    // Suyo y firme: no lleva `retenidoHasta`, nada que hacer.
+    if (
+      await DisponibilidadModelo.exists({
+        _id: slotId,
+        pedidoId,
+        estado: EstadoSlot.OCUPADO,
+        retenidoHasta: { $exists: false },
+      })
+    ) {
+      continue;
+    }
+
+    if (plazoAgotado) {
+      // Sin renovar: solo vale si todavia le queda plazo propio.
+      const vigente = await DisponibilidadModelo.exists({
+        _id: slotId,
+        pedidoId,
+        estado: EstadoSlot.OCUPADO,
+        retenidoHasta: { $gt: ahora },
+      });
+      if (!vigente) perdidos.push(slotId);
+      continue;
+    }
+
+    // Suyo y provisional: se alarga, sin pasar del limite.
+    const renovado = await DisponibilidadModelo.updateOne(
+      { _id: slotId, pedidoId, estado: EstadoSlot.OCUPADO, retenidoHasta: { $exists: true } },
+      { $set: { retenidoHasta: hasta } },
+    );
+    if (renovado.matchedCount > 0) continue;
+
+    // Se solto: se recupera solo si sigue libre. La condicion va en la propia
+    // escritura, igual que al retener, para no quitarselo a quien llegue a la vez.
+    const recuperado = await DisponibilidadModelo.updateOne(
+      { _id: slotId, estado: EstadoSlot.DISPONIBLE },
+      { $set: { estado: EstadoSlot.OCUPADO, pedidoId, retenidoHasta: hasta } },
+    );
+    if (recuperado.matchedCount === 0) perdidos.push(slotId);
+  }
+
+  return { perdidos, plazoAgotado };
+};
+
+/**
+ * Deja en firme los horarios de un pedido que se acaba de cobrar.
+ *
+ * El cobro puede confirmarse despues de caducar la retencion —un Bizum que
+ * tarda, alguien que se queda en el formulario de la tarjeta—. Por cada hueco:
+ * si sigue siendo del pedido se consolida; si se solto y sigue libre, se
+ * recupera ya en firme; si lo tiene otro pedido, se devuelve como perdido para
+ * que quede anotado en el pedido. El dinero ya esta cobrado: lo que no puede
+ * pasar es que el pedido figure con un horario que no tiene sin que nadie lo vea.
+ */
+export const consolidarHorariosAlCobrar = async (
+  pedidoId: Types.ObjectId,
+  slotIds: string[],
+): Promise<{ perdidos: string[] }> => {
+  const perdidos: string[] = [];
+
+  for (const slotId of slotIds) {
+    if (!Types.ObjectId.isValid(slotId)) {
+      perdidos.push(slotId);
+      continue;
+    }
+
+    const suyo = await DisponibilidadModelo.updateOne(
+      { _id: slotId, pedidoId, estado: EstadoSlot.OCUPADO },
+      { $unset: { retenidoHasta: '' } },
+    );
+    if (suyo.matchedCount > 0) continue;
+
+    const recuperado = await DisponibilidadModelo.updateOne(
+      { _id: slotId, estado: EstadoSlot.DISPONIBLE },
+      { $set: { estado: EstadoSlot.OCUPADO, pedidoId }, $unset: { retenidoHasta: '' } },
+    );
+    if (recuperado.matchedCount === 0) perdidos.push(slotId);
+  }
+
+  return { perdidos };
 };
 
 /** Devuelve al catalogo todos los slots ligados a un pedido. */
@@ -129,7 +275,7 @@ export const reasignarSlot = async (
     {
       estado: EstadoSlot.OCUPADO,
       pedidoId,
-      retenidoHasta: calcularCaducidad(),
+      retenidoHasta: calcularCaducidad(HORAS_RETENCION),
     },
     { new: true },
   );

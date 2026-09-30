@@ -79,6 +79,48 @@ export const limpiarIntentos = async (claves: string[]): Promise<void> => {
   await IntentoAcceso.deleteMany({ clave: { $in: claves } });
 };
 
+/**
+ * Cuenta un uso de una ruta publica y dice si esa clave se ha pasado del tope.
+ *
+ * Es otro freno que el del login: alli se cuentan fallos, aqui cualquier uso,
+ * con una ventana fija que empieza en el primero. Comparte coleccion con los
+ * intentos de acceso porque es lo mismo —un contador que caduca solo, en Mongo
+ * y no en memoria, que en serverless no contaria nada—; la clave lleva su
+ * propio prefijo para que los dos no se mezclen.
+ *
+ * Devuelve la fecha en que se puede volver a intentar, o `null` si pasa.
+ */
+export const superaLimiteDeUso = async (
+  clave: string,
+  maximo: number,
+  ventanaMinutos: number,
+): Promise<Date | null> => {
+  const ahora = Date.now();
+
+  const registro = await IntentoAcceso.findOneAndUpdate(
+    { clave },
+    {
+      $inc: { intentos: 1 },
+      // La ventana arranca con el primer uso y no se alarga con los siguientes:
+      // si se alargara, quien insiste no saldria nunca del bloqueo.
+      $setOnInsert: { expiraEn: new Date(ahora + ventanaMinutos * MINUTO_MS) },
+    },
+    { new: true, upsert: true },
+  );
+
+  // El indice TTL borra con hasta un minuto de retraso: una ventana ya vencida
+  // que siga en la coleccion no puede seguir castigando. Se reabre desde aqui.
+  if (registro.expiraEn.getTime() <= ahora) {
+    await IntentoAcceso.updateOne(
+      { clave },
+      { $set: { intentos: 1, expiraEn: new Date(ahora + ventanaMinutos * MINUTO_MS) } },
+    );
+    return null;
+  }
+
+  return registro.intentos > maximo ? registro.expiraEn : null;
+};
+
 /** Segundos que faltan para poder reintentar, para la cabecera `Retry-After`. */
 export const segundosHasta = (momento: Date): number =>
   Math.max(1, Math.ceil((momento.getTime() - Date.now()) / 1000));

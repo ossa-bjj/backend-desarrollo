@@ -27,15 +27,14 @@
 
 |            |                                  |
 | ---------- | -------------------------------- |
-| **Rama**   | `desarrollo`                     |
-| **Commit** | `627ec70` **+ árbol de trabajo** |
-| **Fecha**  | 2026-09-08                       |
+| **Rama**   | `feat/compra-invitado`           |
+| **Commit** | `2d7cb93` **+ árbol de trabajo** |
+| **Fecha**  | 2026-09-29                       |
 
 Esta documentación describe el backend tal y como está **hoy en el árbol de trabajo**, no
-solo en el último commit: sobre `627ec70` hay cambios sin commitear que sí forman parte del
-estado descrito (capa de servicio en todos los dominios, módulo de importes, ESLint y
-Prettier). Se dice explícitamente porque un `git checkout 627ec70` **no** reproduce lo que
-aquí se documenta.
+solo en el último commit: sobre `2d7cb93` (`desarrollo`) están, sin commitear, la compra sin
+cuenta y el endurecimiento del acceso que la acompaña. Se dice explícitamente porque un
+`git checkout 2d7cb93` **no** reproduce lo que aquí se documenta.
 
 Todo lo que afirma se ha comprobado leyendo el código y la configuración; donde algo no se
 ha podido confirmar, se dice.
@@ -50,7 +49,8 @@ API HTTP de la academia de BJJ y Grappling de Arturo Salas. Cubre cuatro cosas:
   imágenes.
 - **Servicios** — sesiones de coaching, mentorías y seminarios, con reserva de horario.
 - **Pedidos y cobro** — carrito mixto de productos y servicios, con confirmación
-  administrativa cuando hace falta tarificar, y cobro con tarjeta, Bizum o PayPal.
+  administrativa cuando hace falta tarificar, y cobro con tarjeta, Bizum o PayPal. Se
+  puede comprar **con cuenta o sin ella**: quien no la tiene deja sus datos y paga.
 - **Contenido** — noticias del club con historial de cambios.
 
 Sirve a un frontend React que vive en un repositorio separado (`ossa-bjj/frontend`).
@@ -91,8 +91,8 @@ de contraseña. Las tres últimas se hablan por REST; solo Stripe usa SDK.
 
 ### Dependencias entre dominios
 
-Comprobadas leyendo los `import` reales. Ningún dominio importa a `users`, y `shared/`
-no importa a nadie: la dirección es correcta.
+Comprobadas leyendo los `import` reales. `shared/` no importa a ningún dominio, y `users`
+no importa a ninguno de los demás: la dirección es correcta.
 
 ```text
 users          → shared
@@ -100,11 +100,14 @@ services       → shared
 news           → shared
 products       → services, shared
 availability   → services, shared
-orders         → availability, payments, products, services, shared
-payments       → availability, orders, products, shared
+orders         → availability, payments, products, services, users, shared
+payments       → availability, orders, products, users, shared
 ```
 
-`orders` y `payments` son los dos nudos: un pedido toca catálogo, horarios y cobro.
+`orders` y `payments` son los dos nudos: un pedido toca catálogo, horarios y cobro. Los dos
+dependen de `users` solo por la compra sin cuenta: el alta de un pedido de invitado crea o
+reutiliza su ficha (`users/ficha-invitado.service.ts`) y usa el freno por IP de
+`acceso.service.ts`, y el cobro marca esa ficha como cliente.
 
 ---
 
@@ -117,11 +120,11 @@ backend/
 ├── src/
 │   ├── availability/         Huecos reservables y retención de horarios
 │   ├── news/                 Noticias con historial de cambios
-│   ├── orders/               Pedidos y confirmación de presupuestos
+│   ├── orders/               Pedidos, confirmación de presupuestos y compra sin cuenta
 │   ├── payments/             Cobro: Stripe (tarjeta y Bizum) y PayPal
 │   ├── products/             Productos y carga de imágenes
 │   ├── services/             Servicios vendibles (códigos 60XX)
-│   ├── users/                Usuarios, perfiles y membresías
+│   ├── users/                Usuarios, perfiles, membresías y fichas de invitado
 │   └── shared/               DB, JWT, R2, CORS, correo, importes, entorno
 ├── docs/
 │   ├── api-endpoints.md      Referencia de rutas
@@ -144,8 +147,14 @@ externos, `stripe.utils.ts` y `paypal.utils.ts`.
 `shared/` contiene lo transversal: `db.ts` (conexión cacheada), `token.utils.ts` (JWT
 y la declaración global de `Request.user`), `auth.middleware.ts` (`isAuth`, `isAdmin`,
 `optionalAuth`), `r2.utils.ts` (Cloudflare R2), `env.ts` (validación de arranque),
-`file.middleware.ts` (Multer en memoria), `dinero.ts` (redondeo de importes) y
-`controller.utils.ts` (errores, permisos y respuestas corrientes).
+`file.middleware.ts` (Multer en memoria), `dinero.ts` (redondeo de importes),
+`huella.ts` (secretos de un solo uso guardados como huella SHA-256: la clave de un pedido de
+invitado y el token de recuperación) y `controller.utils.ts` (errores, permisos y respuestas
+corrientes).
+
+La compra sin cuenta añade dos piezas a `orders/` fuera del patrón de cuatro ficheros:
+`invitado.service.ts` (validación de los datos del comprador y la clave del pedido) e
+`invitado.controller.ts` (sus rutas). Y una a `users/`: `ficha-invitado.service.ts`.
 
 ---
 
@@ -225,10 +234,21 @@ Un servicio con `requiereReserva` consume huecos de la colección `Disponibilida
 mecanismo tiene tres fases y está en `src/availability/disponibilidad.service.ts`:
 
 1. **Retener** (`retenerSlots`) — al crear el pedido, los huecos pasan a `ocupado` con
-   un `retenidoHasta` y el `pedidoId`. Es una retención con caducidad.
-2. **Consolidar** (`consolidarSlotsDePedido`) — cuando se confirma el cobro, se quita la
-   caducidad. A partir de ahí el horario solo se libera cancelando.
-3. **Liberar** (`liberarSlotsDePedido`) — al cancelar o rechazar, los huecos vuelven a
+   un `retenidoHasta` y el `pedidoId`. Es una retención con caducidad: **48 horas** para un
+   cliente con cuenta, **una hora** para un pedido de invitado (ver 5.8).
+2. **Asegurar al cobrar** (`asegurarHorariosParaCobrar` en `pago.service.ts`, sobre
+   `renovarRetencionParaCobrar`) — al arrancar un cobro y al capturar PayPal, antes de mover
+   dinero: se renueva el plazo de los huecos que siguen siendo del pedido, se recuperan los
+   que se soltaron y siguen libres, y si alguno lo tiene ya otro pedido se responde `409` sin
+   cobrar. Una ocupación firme no se toca. **Nunca por encima del tope del pedido**, contado
+   desde el alta: 48 horas con cuenta, 3 sin ella (`limiteDeRetencion`). Sin tope, llamar a
+   «iniciar pago» una y otra vez —aunque nunca se pague— mantendría el hueco bloqueado.
+3. **Consolidar al cobrar** (`consolidarHorariosAlCobrar`) — cuando se confirma el cobro, se
+   quita la caducidad. Si el cobro llegó tarde, se recuperan en firme los huecos que siguen
+   libres y los que ya son de otro pedido se anotan en `incidenciasHorario`, que el panel
+   enseña: el dinero está cobrado y el horario no. A partir de ahí el horario solo se libera
+   cancelando.
+4. **Liberar** (`liberarSlotsDePedido`) — al cancelar o rechazar, los huecos vuelven a
    `disponible`.
 
 Ver [Visita guiada](#14-visita-guiada) para cómo se resuelve la competencia entre dos
@@ -273,8 +293,13 @@ silencioso sería peor que un reembolso trazable.
 
 ### 5.6 Permisos
 
-Tres roles (`user`, `premium`, `admin`) y tres estados de cuenta (`pendiente`,
-`activo`, `baneado`).
+Cuatro roles (`user`, `premium`, `admin` e `invitado`) y tres estados de cuenta
+(`pendiente`, `activo`, `baneado`).
+
+`invitado` no es un nivel de acceso: es la **ficha de quien compró sin cuenta**, sin
+contraseña, y no entra en ningún sitio (ver 5.8). El login la rechaza, nadie le pone
+contraseña a mano, y **ningún rol se cambia desde o hacia `invitado`**, tampoco por un
+admin: la ficha solo deja de serlo cuando su dueño demuestra por correo que es suyo.
 
 La regla de acceso está implementada **una sola vez**, en
 `shared/controller.utils.ts`:
@@ -322,6 +347,64 @@ Cualquier otro valor se rechaza con **400**. La descarga solo acepta `http` y `h
 bloquea las direcciones de la red interna, y corta a 8 MB de imagen, 4 MB de HTML y
 15 segundos.
 
+### 5.8 Compra sin cuenta
+
+Quien no ha iniciado sesión compra dejando nombre, apellidos, correo, teléfono y —si hay
+algo que enviar— dirección. No elige usuario ni contraseña. Las rutas cuelgan de
+`/api/pedidos/invitado` y son públicas.
+
+**El pedido queda a nombre de una ficha.** Es un `User` con rol `invitado`, uno por correo,
+con el correo como `username` y sin contraseña. La primera compra la crea; las siguientes con
+el mismo correo **la reutilizan sin reescribirla**. Quien conoce un correo puede comprar con
+él, pero no cambiarle a esa persona el nombre ni el teléfono; lo único que añade es una
+dirección nueva, hasta cinco, y con una operación condicional que no duplica aunque lleguen
+dos a la vez. Por eso el pedido guarda **su propia copia** del contacto (`invitado`) y del
+envío: es la que vale para ese pedido.
+
+**Un correo con cuenta de verdad no se usa como invitado** (`409`). Colgarle el pedido haría
+que su dueño viera los datos de quien se equivocó al escribirlo.
+
+**Lo que demuestra que un pedido es tuyo es su clave.** Sin sesión no hay token: al crear el
+pedido el servidor genera 32 bytes aleatorios, guarda su huella SHA-256 y devuelve la clave
+**una sola vez**. Viaja después en la cabecera `X-Clave-Pedido` para leer, cobrar y capturar.
+Una clave equivocada, un pedido con cuenta o uno inexistente responden igual, `404`. Y a la
+inversa: **un pedido de invitado no se abre con una sesión** —salvo la de un admin—, ni
+siquiera la de la cuenta en que se haya convertido su ficha.
+
+**Orden del alta**: se valida todo, se cuenta el uso contra el freno por IP, se obtiene la
+ficha, se guarda el pedido, se retienen los horarios y, solo si todo ha ido bien, se añade la
+dirección a la ficha. Si el horario se lo lleva otro, el pedido se borra pero **la ficha se
+queda aunque sea nueva**: borrarla en ese momento chocaba con otra compra simultánea del mismo
+correo, que se quedaba con su pedido apuntando a una ficha inexistente.
+
+**Un pedido vivo por compra.** `POST /invitado/:id/cancelar` deja al propio invitado cancelar
+con su clave un pedido sin pagar, y suelta sus horarios; si tenía un intento de Stripe vivo, lo
+cancela también, para que no se pueda terminar de pagar desde otra pestaña. El frontend lo usa
+cuando el cliente cambia el carrito o sus datos, o entra con su cuenta, antes de crear otro
+pedido: si no, el nuevo chocaría con los horarios que retiene el abandonado. Un pedido pagado
+o con el pago en marcha no se cancela por aquí.
+
+**Frenos de la ruta pública.** 10 pedidos y 30 arranques de cobro por IP y hora (`429` con
+`Retry-After`), sobre el mismo contador con caducidad automática que el login
+(`IntentoAcceso`). Los horarios de un pedido de invitado se retienen una hora, renovable al
+cobrar hasta tres desde el alta. Los campos tienen tope de longitud. Una ficha bloqueada por
+el admin no puede seguir comprando (`403`, sin decir por qué).
+
+**Convertir la ficha en cuenta** pasa por el correo: «¿Olvidaste tu contraseña?» le envía un
+enlace de «Crea tu cuenta», y al usarlo la ficha pasa a `user`, `activo` —salvo que estuviera
+bloqueada: el bloqueo se conserva— y con el correo verificado. **La cuenta nace sin las
+direcciones de la ficha**: hasta ese momento cualquiera pudo escribirlas usando ese correo. El
+nombre y el teléfono sí se conservan: casi siempre son del propio dueño, y los puede corregir
+en su perfil. Si la ficha tuvo que tomar un usuario alternativo, al convertirse recupera el
+correo como usuario si ya está libre, y si no, la respuesta le dice cuál es. No hay otra vía:
+ni el registro ni el admin convierten una ficha.
+
+**Al pagarse**, la ficha pasa a `customer.isCustomer: true`. La ficha se crea con el pedido,
+antes de pagar; sin esa marca el panel no distinguiría a quien compró de quien dejó el carrito.
+
+Un presupuesto (`requiereConfirmacion`) **necesita cuenta**: se paga días después, cuando el
+admin lo tarifica, y sin cuenta no hay dónde volver a encontrarlo.
+
 ---
 
 ## 6. Modelo de datos
@@ -350,6 +433,7 @@ un solo documento cinco secciones anidadas:
 ```text
 User
 ├── username, email, password (hash bcrypt), role, status
+│                    `password` es obligatoria salvo en role = invitado, que no tiene
 ├── profile          nombre, teléfono, avatar, direcciones de envío
 ├── customer         si es cliente, origen, fecha de alta
 ├── sportsProfile    si es deportista, federado, licencia, club
@@ -357,11 +441,23 @@ User
 └── membershipPayments[]   historial de pagos de cuota
 ```
 
+`metadata.resetPasswordToken` guarda la **huella** SHA-256 del token del enlace, no el token:
+quien lea la base de datos no puede usarlo.
+
+Con `role: invitado` el documento es una **ficha de compra sin cuenta**: `username` igual al
+correo (salvo que otra cuenta antigua ya se llamara así, en cuyo caso lleva un sufijo), sin
+contraseña, con como mucho cinco direcciones. Ver [5.8](#58-compra-sin-cuenta).
+
 ### Order
 
 ```text
 Order
-├── user            referencia a User — puede quedar en null si la cuenta se borró
+├── user            referencia a User — puede quedar en null si la cuenta se borró.
+│                   En un pedido sin cuenta apunta a la ficha del invitado
+├── invitado        { firstName, lastName, email, phone } — solo en pedidos sin
+│                   cuenta: el contacto tal y como lo dio al comprar
+├── accesoInvitado  huella de la clave del pedido; select: false y nunca sale en
+│                   una respuesta (lo impide el toJSON del esquema)
 ├── items[]         { tipo, codigoArticulo, nombre, precio, cantidad, talla, slotId }
 │                   `talla` solo en productos; `slotId` solo en servicios
 ├── total           calculado por el servidor
@@ -376,6 +472,8 @@ Order
 │                   Stripe o el id de la CAPTURA de PayPal (no el de la orden:
 │                   es el único con el que PayPal admite una devolución)
 ├── incidenciasStock[]  líneas cobradas sin existencias de su talla
+├── incidenciasHorario[]  horarios cobrados cuando ya eran de otro pedido
+│                   (el cobro llegó después de caducar la retención)
 └── motivoRechazo   solo cuando status = rechazado
 ```
 
@@ -437,11 +535,12 @@ Noticia
 
 ### IntentoAcceso
 
-El contador del freno de fuerza bruta del login.
+El contador de los frenos: el de fuerza bruta del login y el de pedidos sin cuenta por IP.
 
 ```text
 IntentoAcceso
-├── clave            a quién cuenta: un usuario o una IP
+├── clave            a quién cuenta: `usuario:<nombre>`, `ip:<ip>` o
+│                    `pedido-invitado:ip:<ip>` o `pago-invitado:ip:<ip>`
 ├── intentos         fallos acumulados
 ├── bloqueadoHasta   hasta cuándo se rechaza
 └── expiraEn         cuándo se borra el documento
@@ -594,9 +693,10 @@ npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier -
 
 ### Comprobación automática
 
-**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/` y hoy cubren el
-**cobro con Stripe** de punta a punta: arrancarlo, los avisos que devuelve Stripe y la
-devolución del dinero.
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 162 en 13 ficheros.
+Cubren el **cobro con Stripe** de punta a punta —arrancarlo, los avisos que devuelve Stripe y
+la devolución del dinero— y la **compra sin cuenta**: el alta, la ficha, la clave, los
+horarios, los frenos y la conversión de la ficha en cuenta.
 
 ```text
 test/
@@ -619,11 +719,18 @@ test/
 │   ├── pago-asincrono.test.ts   payment_intent.processing (Bizum) y sus desenlaces
 │   ├── reembolso.test.ts        charge.refunded
 │   └── disputa.test.ts          charge.dispute.created y charge.dispute.closed
-└── pagos/
-    ├── iniciar-pago.test.ts         POST /pedidos/:id/pago/iniciar: permisos, estados
-    │                                cobrables y qué se le pide a Stripe
-    ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
-    └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
+├── pagos/
+│   ├── iniciar-pago.test.ts         POST /pedidos/:id/pago/iniciar: permisos, estados
+│   │                                cobrables y qué se le pide a Stripe
+│   ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
+│   └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
+└── invitado/
+    ├── compra-invitado.test.ts      POST /pedidos/invitado: ficha, reutilización sin
+    │                                reescribirla, correos con cuenta, direcciones, frenos,
+    │                                clave, horarios y pedidos que la sesión no abre
+    └── ficha-sin-acceso.test.ts     La ficha no entra; conversión en cuenta por correo;
+                                     solo texto en las rutas públicas de acceso; el admin
+                                     no cambia su rol
 ```
 
 Tres decisiones que explican cómo están escritos:
@@ -644,8 +751,8 @@ analizan con `tsconfig.test.json`, que es el que usan `npm run verificar` y ESLi
 
 `seed.ts` queda fuera de todo: no está en `tsconfig` ni lo revisa ESLint.
 
-**Lo que no está cubierto**: el cobro con PayPal, los pedidos (alta, confirmación,
-rechazo), usuarios, catálogo y disponibilidad.
+**Lo que no está cubierto**: el cobro con PayPal, el alta de pedidos con cuenta, la
+confirmación y el rechazo de presupuestos, el resto de usuarios, catálogo y disponibilidad.
 
 ### Comprobación funcional
 
@@ -699,15 +806,15 @@ para todos los controladores a la vez.
 
 ### Grupos
 
-| Prefijo               | Dominio                                                          |
-| --------------------- | ---------------------------------------------------------------- |
-| `/api/users`          | Registro, login, perfil, direcciones, membresías, administración |
-| `/api/productos`      | Catálogo, CRUD e imágenes                                        |
-| `/api/servicios`      | Catálogo de servicios, CRUD e imágenes                           |
-| `/api/disponibilidad` | Consulta de huecos, generación por lotes, bloqueo                |
-| `/api/pedidos`        | Carrito, confirmación, cambio de estado y cobro                  |
-| `/api/noticias`       | Listado público, administración y publicación                    |
-| `/api/media/*`        | Proxy de lectura de archivos de R2                               |
+| Prefijo               | Dominio                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `/api/users`          | Registro, login, perfil, direcciones, membresías, administración   |
+| `/api/productos`      | Catálogo, CRUD e imágenes                                          |
+| `/api/servicios`      | Catálogo de servicios, CRUD e imágenes                             |
+| `/api/disponibilidad` | Consulta de huecos, generación por lotes, bloqueo                  |
+| `/api/pedidos`        | Carrito, confirmación, cambio de estado, cobro y compra sin cuenta |
+| `/api/noticias`       | Listado público, administración y publicación                      |
+| `/api/media/*`        | Proxy de lectura de archivos de R2                                 |
 
 ### Autenticación
 
@@ -721,6 +828,12 @@ POST /api/users/login
 
 Devuelve `{ success: true, data: { token, user } }`. El token va en las peticiones
 protegidas como `Authorization: Bearer <token>`, y caduca a las 8 horas.
+
+**Las rutas públicas de acceso solo admiten texto** en los campos que acaban en una consulta
+(`username`, `password`, `email`, `token`). Antes aceptaban cualquier JSON, y un
+`{ "$ne": null }` como token de recuperación encontraba la cuenta de otro y le cambiaba la
+contraseña. Se valida campo a campo y no con `sanitizeFilter` global, porque el propio código
+construye filtros con operadores (`$gt`, `$lt`…) que ese ajuste rompería.
 
 El registro **exige `profile`** en el cuerpo; sin él, Mongoose rechaza con
 `Path 'profile' is required`. El `.env.example` no lo documenta.
@@ -943,7 +1056,8 @@ array, porque nadie lo quitaba, y aparecía mezclado en la galería.
 Los siete dominios están implementados y responden: registro y login, perfil y direcciones,
 permisos por rol, catálogo de productos **con stock por talla** y de servicios con carga de
 imágenes, parrilla de disponibilidad con reserva de horario, pedidos con confirmación
-administrativa, cobro, devolución del importe al cancelar, y noticias con historial.
+administrativa, **compra sin cuenta**, cobro, devolución del importe al cancelar, y noticias
+con historial.
 
 **El cobro con tarjeta y con Bizum se puede ejercitar: `STRIPE_SECRET_KEY` está puesta.**
 Lo que falta es `STRIPE_WEBHOOK_SECRET`, y su ausencia tiene una consecuencia concreta y
@@ -955,15 +1069,17 @@ falta. Bizum ya está activado en el panel de Stripe.
 `PAYPAL_CLIENT_SECRET` están vacías, así que cualquier intento falla al pedir el token.
 
 **La recuperación de contraseña está completa y con proveedor.** `RESEND_API_KEY` y
-`CORREO_REMITENTE` están puestas, así que el correo sale. Es el **único** correo del
-sistema: no hay correo de confirmación de pedido ni de ningún otro suceso.
+`CORREO_REMITENTE` están puestas, así que el correo sale. Sirve también para que quien compró
+sin cuenta la cree: a una ficha de invitado le llega un correo de «Crea tu cuenta». Son los
+**dos únicos** correos del sistema: no hay correo de confirmación de pedido ni de ningún otro
+suceso.
 
 **El registro exige `profile` en el cuerpo de la petición**, con el nombre y los apellidos
 dentro. Sin él responde `400 Datos no validos: profile`.
 
-**La verificación automática es estática**: tipos, linter y formato. No hay tests en el
-repositorio ni framework declarado; es una decisión del proyecto, no un descuido. Lo
-funcional se comprueba a mano contra el servidor levantado.
+**Hay tests automáticos del cobro con Stripe y de la compra sin cuenta** (162, ver
+[Tests](#11-tests)), además de la verificación estática: tipos, linter y formato. El resto se
+comprueba a mano contra el servidor levantado.
 
 Lo que falta por hacer está recogido en el
 [Checklist de pendientes](#17-checklist-de-pendientes).
@@ -1045,18 +1161,62 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       credenciales, falta darlo de alta apuntando a `/api/pedidos/webhook/paypal`, suscrito
       a `CHECKOUT.ORDER.APPROVED`, y copiar su id en `PAYPAL_WEBHOOK_ID`. Sin él, un cliente
       que apruebe y no vuelva al sitio deja el pedido a medias. — panel de PayPal, `.env`
-- [ ] **No hay correo de confirmación de pedido.** El único correo del sistema es el de
-      recuperación de contraseña. Si se implementa, su sitio es `marcarPagado`.
-      — `src/shared/correo.ts`, `src/payments/pago.service.ts`
+- [ ] **No hay correo de confirmación de pedido.** Los únicos correos del sistema son el de
+      recuperación de contraseña y el de «Crea tu cuenta». Si se implementa, su sitio es
+      `marcarPagado`. — `src/shared/correo.ts`, `src/payments/pago.service.ts`
+- [ ] **Un invitado que pierde la clave de su pedido no la recupera.** El servidor la entrega
+      una vez y el frontend la guarda en `sessionStorage`, que muere con la pestaña. Si se
+      pierde a mitad de un pago, el pedido queda `pendiente` hasta que caduca su retención y
+      hay que volver a comprar. La salida natural es mandarla por correo al crear el pedido,
+      detrás del freno por IP para que no sirva para mandar spam.
+      — `src/orders/invitado.controller.ts`, `src/shared/correo.ts`
+- [ ] **La clave de un pedido de invitado no caduca.** Quien la tenga puede leer el contacto
+      y la dirección del pedido indefinidamente. Hoy no sale del `sessionStorage` de la
+      pestaña que compró, pero si alguna vez viaja en un enlace habría que limitar lo que abre
+      un pedido ya pagado o darle una caducidad. — `src/orders/invitado.controller.ts`
+- [ ] **Las fichas de carritos abandonados no se limpian.** La ficha se crea con el pedido,
+      antes de pagar, y tampoco se borra si el pedido falla por un horario ocupado. Las que
+      nunca pagaron (`customer.isCustomer: false`) se quedan en el listado de usuarios. Se
+      distinguen con el filtro «Cliente», pero no se borran solas; haría falta un barrido
+      periódico de fichas sin pedidos pagados. — `src/users/ficha-invitado.service.ts`
+- [ ] **Una cuenta convertida desde una ficha conserva el nombre y el teléfono de la ficha.**
+      Los escribió la primera compra con ese correo, que casi siempre es del propio dueño,
+      pero pudo ser otra persona. Se ven en el perfil y se pueden corregir; las direcciones sí
+      se descartan. — `src/users/auth.controller.ts` (`resetPassword`)
+- [ ] **Los pedidos con cuenta siguen creándose al pulsar el método de pago.** Volver atrás
+      desde el formulario de la tarjeta y elegir otro método crea otro pedido que retiene sus
+      horarios. La compra sin cuenta ya no lo hace (crea el pedido una vez y lo cancela antes
+      de rehacerlo); el carrito con cuenta está igual que antes. — frontend,
+      `src/features/checkout/model/useCheckout.ts`
+- [ ] **Borrar una ficha deja sus pedidos apuntando a un id que ya no existe**, y la
+      siguiente compra con ese correo crea otra ficha. El panel no se rompe —nombra el pedido
+      por su copia de contacto—, pero el filtro `?usuario=` ya no los encuentra.
+      — `src/users/user.controller.ts` (`deleteUser`)
 - [ ] **El panel no puede borrar un pedido.** `DELETE /api/pedidos/:id` existe y es de
       admin, pero el frontend no tiene la llamada. Es coherente con la política —un pedido
       se cancela, no se borra—, así que solo se anota. — `src/orders/order.routes.ts`
-- [ ] **Tests solo del cobro con Stripe.** Hay 95 tests (Vitest + Supertest + MongoDB en
-      memoria) que cubren el webhook, el inicio del cobro, el reembolso y los importes. No
-      hay ninguno de pedidos, usuarios, catálogo, disponibilidad ni del cobro con PayPal.
-      — `test/`
+- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 162 (Vitest +
+      Supertest + MongoDB en memoria). No hay ninguno del alta de pedidos con cuenta, de la
+      confirmación de presupuestos, del resto de usuarios, catálogo, disponibilidad ni del
+      cobro con PayPal. — `test/`
 
 ### Cerrados
+
+- [x] **Compra sin cuenta.** `POST /api/pedidos/invitado` y sus rutas de lectura y cobro por
+      clave; ficha de invitado en `User`; conversión en cuenta por correo; frenos de la ruta
+      pública. — `src/orders/invitado.*`, `src/users/ficha-invitado.service.ts`
+- [x] **Las rutas públicas de acceso aceptaban objetos.** Un `{ "$ne": null }` como token de
+      `reset-password` cambiaba la contraseña de otra cuenta con una recuperación en curso.
+      Ahora exigen texto, y el token se guarda como huella. — `src/users/auth.controller.ts`
+- [x] **Se podía cobrar un pedido cuyo horario había caducado.** Arrancar el cobro y capturar
+      PayPal renuevan, recuperan o rechazan los huecos antes de mover dinero, con un tope
+      absoluto desde el alta. — `src/payments/pago.service.ts` (`asegurarHorariosParaCobrar`)
+- [x] **Un cobro que llegaba tarde dejaba el pedido pagado sin horario y sin aviso.** Ahora
+      recupera el hueco si sigue libre y, si no, lo anota en `incidenciasHorario`, que el
+      panel enseña. — `src/availability/disponibilidad.service.ts`
+      (`consolidarHorariosAlCobrar`)
+- [x] **Se podía capturar PayPal sobre un pedido cancelado.** La captura comprueba ahora que
+      el pedido sigue siendo pagable. — `src/payments/pago.service.ts` (`cerrarPagoDePayPal`)
 
 - [x] **Claves de Stripe y de Resend configuradas.** `STRIPE_SECRET_KEY` y `RESEND_API_KEY`
       ya tienen valor: se puede cobrar con tarjeta y sale el correo de recuperación. — `.env`

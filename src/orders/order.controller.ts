@@ -3,13 +3,18 @@ import { Types } from 'mongoose';
 import { Order, OrderStatus, OrderItemTipo, identidadLinea } from './order.model';
 import { reembolsarPedido, type ResultadoReembolso } from '../payments/reembolso.service';
 import {
-  retenerSlots,
   liberarSlotsDePedido,
   liberarSlot,
   consolidarSlotsDePedido,
   reasignarSlot,
 } from '../availability/disponibilidad.service';
-import { leerCriteriosPedido, listarPedidos, prepararPedido } from './order.service';
+import {
+  HORARIO_OCUPADO,
+  leerCriteriosPedido,
+  listarPedidos,
+  prepararPedido,
+  retenerHorariosDelPedido,
+} from './order.service';
 import {
   sendServerError,
   esAdmin,
@@ -71,6 +76,13 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    // Un pedido hecho sin cuenta solo se abre con su clave, por
+    // `/api/pedidos/invitado/:id`; ver `soloConCuenta` en order.service.ts.
+    if (order.invitado && !esAdmin(req)) {
+      noEncontrado(res, 'Pedido');
+      return;
+    }
+
     res.status(200).json({ success: true, data: order });
   } catch (error) {
     sendServerError(res, 'Error obteniendo pedido', error);
@@ -103,18 +115,9 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 
     // Los horarios se retienen contra el pedido ya creado. Si alguno se lo llevo
     // otro cliente mientras tanto, se anula el pedido en lugar de venderlo dos veces.
-    const slotIds = preparado.items
-      .map((item) => item.slotId)
-      .filter((id): id is string => typeof id === 'string');
-
-    if (slotIds.length > 0) {
-      const { ocupados } = await retenerSlots(order._id, slotIds);
-      if (ocupados.length > 0) {
-        await liberarSlotsDePedido(order._id);
-        await order.deleteOne();
-        conflicto(res, 'Alguno de los horarios elegidos ya no está disponible. Vuelve a elegir hora.');
-        return;
-      }
+    if (!(await retenerHorariosDelPedido(order))) {
+      conflicto(res, HORARIO_OCUPADO);
+      return;
     }
 
     res.status(201).json({ success: true, data: order });

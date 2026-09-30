@@ -9,16 +9,20 @@ import type Stripe from 'stripe';
 import { Order } from '../orders/order.model';
 import {
   sendServerError,
+  conflicto,
+  esAdmin,
   esDuenoOAdmin,
   leerObjectId,
   noEncontrado,
   peticionInvalida,
   sinPermiso,
 } from '../shared/controller.utils';
+import { claveIp, segundosHasta, superaLimiteDeUso } from '../users/acceso.service';
 import { getStripe, getWebhookSecret } from './stripe.utils';
 import { firmaDeWebhookEsValida } from './paypal.utils';
 import {
   anotarEstadoDelIntento,
+  asegurarHorariosParaCobrar,
   cerrarPagoDePayPal,
   esMetodoValido,
   iniciarConPayPal,
@@ -28,52 +32,130 @@ import {
   pedidoDelIntento,
   registrarDisputa,
   resolverUrlDeRetorno,
+  type Pedido,
 } from './pago.service';
 import { registrarReembolsoExterno } from './reembolso.service';
+import { cargarPedidoDeInvitado } from '../orders/invitado.controller';
+
+/**
+ * Carga el pedido de la ruta y comprueba que quien llama con su token puede
+ * operar sobre el: su dueño o un admin. Devuelve `null` cuando ya ha respondido.
+ */
+const cargarPedidoPropio = async (req: Request, res: Response): Promise<Pedido | null> => {
+  const id = leerObjectId(res, req.params.id, 'pedido');
+  if (!id) return null;
+
+  const order = await Order.findById(id);
+  if (!order) {
+    noEncontrado(res, 'Pedido');
+    return null;
+  }
+
+  // Nadie paga el pedido de otro.
+  if (!esDuenoOAdmin(req, order.user)) {
+    sinPermiso(res, 'No tienes permisos sobre este pedido');
+    return null;
+  }
+
+  // Un pedido hecho sin cuenta se cobra con su clave, por la ruta de invitado,
+  // nunca con una sesion: ver `soloConCuenta` en orders/order.service.ts.
+  if (order.invitado && !esAdmin(req)) {
+    noEncontrado(res, 'Pedido');
+    return null;
+  }
+
+  return order;
+};
+
+/**
+ * Arranca el cobro de un pedido cuyo acceso ya se ha comprobado.
+ *
+ * Es el mismo para el cliente con cuenta y para el invitado: lo unico que cambia
+ * entre los dos es como se demuestra que el pedido es tuyo, no como se cobra.
+ */
+const arrancarCobro = async (order: Pedido, req: Request, res: Response): Promise<void> => {
+  const impedimento = motivoParaNoCobrar(order);
+  if (impedimento) {
+    res.status(impedimento.estado).json({ error: impedimento.error });
+    return;
+  }
+
+  const metodo = req.body?.metodo ?? 'stripe';
+  if (!esMetodoValido(metodo)) {
+    peticionInvalida(res, `Método de pago no soportado: ${metodo}`);
+    return;
+  }
+
+  // Se valida todo lo de la peticion antes de tocar los horarios: una llamada
+  // que no va a cobrar nada no debe renovar ninguna retencion.
+  const returnUrl = metodo === 'paypal' ? resolverUrlDeRetorno(req.body?.returnUrl) : null;
+  if (metodo === 'paypal' && !returnUrl) {
+    peticionInvalida(res, 'Falta una URL de retorno válida para PayPal');
+    return;
+  }
+
+  // Los horarios, antes que la pasarela: cobrar un pedido cuyo hueco ya no es
+  // suyo lo dejaria pagado sin horario.
+  const horarios = await asegurarHorariosParaCobrar(order);
+  if (!horarios.ok) {
+    conflicto(res, horarios.error);
+    return;
+  }
+
+  if (metodo === 'paypal' && returnUrl) {
+    res.status(200).json({ success: true, data: await iniciarConPayPal(order, returnUrl) });
+    return;
+  }
+
+  res.status(200).json({ success: true, data: await iniciarConStripe(order, metodo as 'stripe' | 'bizum') });
+};
+
+/** Captura el pago de PayPal de un pedido cuyo acceso ya se ha comprobado. */
+const capturarCobro = async (order: Pedido, res: Response): Promise<void> => {
+  const resultado = await cerrarPagoDePayPal(order);
+  if (!resultado.ok) {
+    res.status(resultado.estado).json({ error: resultado.error });
+    return;
+  }
+
+  res.status(200).json({ success: true, data: await Order.findById(order._id) });
+};
 
 // POST /api/pedidos/:id/pago/iniciar
 // Arranca el cobro de un pedido ya confirmado con el metodo que pida el cliente.
 export const iniciarPago = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = leerObjectId(res, req.params.id, 'pedido');
-    if (!id) return;
+    const order = await cargarPedidoPropio(req, res);
+    if (order) await arrancarCobro(order, req, res);
+  } catch (error) {
+    sendServerError(res, 'Error iniciando el pago', error);
+  }
+};
 
-    const order = await Order.findById(id);
-    if (!order) {
-      noEncontrado(res, 'Pedido');
+/**
+ * Arranques de cobro sin cuenta por IP y hora. Un cliente real reintenta unas
+ * pocas veces; esto frena a quien quiera usar la ruta para renovar retenciones
+ * o para sondear claves.
+ */
+const MAXIMO_COBROS_INVITADO_POR_IP = 30;
+
+// POST /api/pedidos/invitado/:id/pago/iniciar
+// Lo mismo para quien compra sin cuenta: el pedido lo abre su clave, no un token.
+export const iniciarPagoInvitado = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const bloqueo = await superaLimiteDeUso(
+      `pago-invitado:${claveIp(req.ip ?? 'desconocida')}`,
+      MAXIMO_COBROS_INVITADO_POR_IP,
+      60,
+    );
+    if (bloqueo) {
+      res.set('Retry-After', String(segundosHasta(bloqueo)));
+      res.status(429).json({ error: 'Demasiados intentos de pago seguidos. Inténtalo de nuevo más tarde' });
       return;
     }
 
-    // Nadie paga el pedido de otro.
-    if (!esDuenoOAdmin(req, order.user)) {
-      sinPermiso(res, 'No tienes permisos sobre este pedido');
-      return;
-    }
-
-    const impedimento = motivoParaNoCobrar(order);
-    if (impedimento) {
-      res.status(impedimento.estado).json({ error: impedimento.error });
-      return;
-    }
-
-    const metodo = req.body?.metodo ?? 'stripe';
-    if (!esMetodoValido(metodo)) {
-      peticionInvalida(res, `Método de pago no soportado: ${metodo}`);
-      return;
-    }
-
-    if (metodo === 'paypal') {
-      const returnUrl = resolverUrlDeRetorno(req.body?.returnUrl);
-      if (!returnUrl) {
-        peticionInvalida(res, 'Falta una URL de retorno válida para PayPal');
-        return;
-      }
-
-      res.status(200).json({ success: true, data: await iniciarConPayPal(order, returnUrl) });
-      return;
-    }
-
-    res.status(200).json({ success: true, data: await iniciarConStripe(order, metodo) });
+    const order = await cargarPedidoDeInvitado(req, res);
+    if (order) await arrancarCobro(order, req, res);
   } catch (error) {
     sendServerError(res, 'Error iniciando el pago', error);
   }
@@ -83,27 +165,18 @@ export const iniciarPago = async (req: Request, res: Response): Promise<void> =>
 // Cierra un pago de PayPal cuando el cliente vuelve de aprobarlo.
 export const capturarPago = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = leerObjectId(res, req.params.id, 'pedido');
-    if (!id) return;
+    const order = await cargarPedidoPropio(req, res);
+    if (order) await capturarCobro(order, res);
+  } catch (error) {
+    sendServerError(res, 'Error capturando el pago', error);
+  }
+};
 
-    const order = await Order.findById(id);
-    if (!order) {
-      noEncontrado(res, 'Pedido');
-      return;
-    }
-
-    if (!esDuenoOAdmin(req, order.user)) {
-      sinPermiso(res, 'No tienes permisos sobre este pedido');
-      return;
-    }
-
-    const resultado = await cerrarPagoDePayPal(order);
-    if (!resultado.ok) {
-      res.status(resultado.estado).json({ error: resultado.error });
-      return;
-    }
-
-    res.status(200).json({ success: true, data: await Order.findById(order._id) });
+// POST /api/pedidos/invitado/:id/pago/capturar
+export const capturarPagoInvitado = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await cargarPedidoDeInvitado(req, res);
+    if (order) await capturarCobro(order, res);
   } catch (error) {
     sendServerError(res, 'Error capturando el pago', error);
   }

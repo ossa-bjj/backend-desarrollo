@@ -30,15 +30,15 @@ Vive en Vercel. Los datos, en MongoDB. Las fotos y archivos, en Cloudflare R2.
 
 ## 🧩 Qué sabe hacer
 
-|     | Módulo             | De qué se ocupa                         |
-| :-: | ------------------ | --------------------------------------- |
-| 👤  | **Usuarios**       | Registro, login y permisos              |
-| 🛍️  | **Productos**      | El catálogo de la tienda                |
-| 📦  | **Pedidos**        | La compra, el cobro y su estado         |
-| 🥋  | **Servicios**      | Clases, sesiones y seminarios           |
-| 📅  | **Disponibilidad** | Qué huecos quedan libres para reservar  |
-| 📰  | **Noticias**       | Las publicaciones del club              |
-| 🖼️  | **Media**          | Sirve las imágenes guardadas en la nube |
+|     | Módulo             | De qué se ocupa                                         |
+| :-: | ------------------ | ------------------------------------------------------- |
+| 👤  | **Usuarios**       | Registro, login y permisos                              |
+| 🛍️  | **Productos**      | El catálogo de la tienda                                |
+| 📦  | **Pedidos**        | La compra (con cuenta o sin ella), el cobro y su estado |
+| 🥋  | **Servicios**      | Clases, sesiones y seminarios                           |
+| 📅  | **Disponibilidad** | Qué huecos quedan libres para reservar                  |
+| 📰  | **Noticias**       | Las publicaciones del club                              |
+| 🖼️  | **Media**          | Sirve las imágenes guardadas en la nube                 |
 
 Todo cuelga de `/api`. Por ejemplo: `/api/productos`, `/api/pedidos`.
 
