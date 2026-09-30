@@ -405,11 +405,31 @@ antes de pagar; sin esa marca el panel no distinguiría a quien compró de quien
 Un presupuesto (`requiereConfirmacion`) **necesita cuenta**: se paga días después, cuando el
 admin lo tarifica, y sin cuenta no hay dónde volver a encontrarlo.
 
+### 5.9 Solicitudes de propuesta y avisos a la academia
+
+**Solicitudes.** El formulario de «Solicitar propuesta» de un servicio —seminarios a medida
+para academias— manda `POST /api/servicios/:codigo/solicitudes`. Se guarda en la colección
+`Solicitud` con el nombre del servicio de ese momento y estado `nueva`, y el admin la atiende
+en su bandeja (`respondida`, `descartada`). No es un pedido: no tiene precio ni se cobra. Se
+guarda **antes** de avisar: si el aviso falla, la solicitud ya está en el panel. La ruta es
+pública y tiene freno: 5 por IP y hora.
+
+**Avisos** (`src/shared/avisos.ts`). Tres sucesos avisan a la academia sin esperar a que
+entre al panel: una solicitud de propuesta, una reclamación de un cobro (al abrirse y al
+cerrarse, no en los cambios intermedios) y un cobro que no se pudo servir entero (sin
+existencias o sin horario, en un solo aviso por cobro). Salen por **Telegram**
+(`TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`, `src/shared/telegram.ts`) y por **correo**
+(`CORREO_ACADEMIA`). Cada canal es opcional y ninguno lanza: sin configurar o caído, el aviso
+no sale y queda en el log, y el dato sigue guardado donde corresponde. Lo que escribe un
+visitante se escapa antes de ir en el HTML del correo o del mensaje de Telegram.
+
+Los pedidos pagados **no** avisan: se consultan en el panel.
+
 ---
 
 ## 6. Modelo de datos
 
-MongoDB con Mongoose. Siete colecciones:
+MongoDB con Mongoose. Ocho colecciones:
 
 ```text
 User ──1:N──→ Order ──1:N──→ OrderItem (embebido)
@@ -422,6 +442,7 @@ Producto        independiente, referenciado por codigoArticulo
                 lleva tallas[] con el stock de cada una
 Servicio        independiente, referenciado por codigoArticulo
 Disponibilidad  ──N:1──→ Servicio
+Solicitud       ──N:1──→ Servicio (por codigoArticulo, con copia del nombre)
 IntentoAcceso   independiente, se borra sola
 ```
 
@@ -531,6 +552,15 @@ Noticia
 ├── publicada       nace en false
 ├── autor           referencia a User
 └── historial[]     { fecha, autor, accion, snapshot }
+```
+
+### Solicitud
+
+```text
+Solicitud
+├── servicio, servicioNombre   código del servicio y su nombre cuando se pidió
+├── academia, ciudad, alumnos, fechas, contacto, mensaje
+└── estado                     nueva | respondida | descartada
 ```
 
 ### IntentoAcceso
@@ -693,7 +723,7 @@ npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier -
 
 ### Comprobación automática
 
-**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 162 en 13 ficheros.
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 181 en 16 ficheros.
 Cubren el **cobro con Stripe** de punta a punta —arrancarlo, los avisos que devuelve Stripe y
 la devolución del dinero— y la **compra sin cuenta**: el alta, la ficha, la clave, los
 horarios, los frenos y la conversión de la ficha en cuenta.
@@ -724,6 +754,12 @@ test/
 │   │                                cobrables y qué se le pide a Stripe
 │   ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
 │   └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
+├── solicitudes/
+│   └── solicitudes.test.ts      Formulario de propuesta y bandeja del admin
+├── avisos/
+│   ├── avisos.test.ts           Telegram y correo: opcionales, escapados, uno caído
+│   │                            no tumba al otro
+│   └── avisos-de-cobro.test.ts  Cuándo avisan una reclamación y un cobro sin servir
 └── invitado/
     ├── compra-invitado.test.ts      POST /pedidos/invitado: ficha, reutilización sin
     │                                reescribirla, correos con cuenta, direcciones, frenos,
@@ -1077,7 +1113,7 @@ suceso.
 **El registro exige `profile` en el cuerpo de la petición**, con el nombre y los apellidos
 dentro. Sin él responde `400 Datos no validos: profile`.
 
-**Hay tests automáticos del cobro con Stripe y de la compra sin cuenta** (162, ver
+**Hay tests automáticos del cobro con Stripe, de la compra sin cuenta, de las solicitudes y de los avisos** (181, ver
 [Tests](#11-tests)), además de la verificación estática: tipos, linter y formato. El resto se
 comprueba a mano contra el servidor levantado.
 
@@ -1195,12 +1231,20 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 - [ ] **El panel no puede borrar un pedido.** `DELETE /api/pedidos/:id` existe y es de
       admin, pero el frontend no tiene la llamada. Es coherente con la política —un pedido
       se cancela, no se borra—, así que solo se anota. — `src/orders/order.routes.ts`
-- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 162 (Vitest +
+- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 181 (Vitest +
       Supertest + MongoDB en memoria). No hay ninguno del alta de pedidos con cuenta, de la
       confirmación de presupuestos, del resto de usuarios, catálogo, disponibilidad ni del
       cobro con PayPal. — `test/`
 
 ### Cerrados
+
+- [x] **El formulario de «Solicitar propuesta» no enviaba nada.** Ahora se guarda, el admin
+      lo atiende en su bandeja y se avisa a la academia. — `src/services/solicitud.*`
+- [x] **A la academia no le llegaba ningún aviso.** Solicitudes, reclamaciones y cobros que
+      no se pudieron servir avisan por Telegram y correo, cada canal opcional.
+      — `src/shared/avisos.ts`
+- [x] **`/register` dejaba asignarse cuota, pagos de cuota y ficha de cliente.** Solo admite
+      usuario, correo, contraseña y perfil básico. — `src/users/auth.controller.ts`
 
 - [x] **Compra sin cuenta.** `POST /api/pedidos/invitado` y sus rutas de lectura y cobro por
       clave; ficha de invitado en `User`; conversión en cuenta por correo; frenos de la ruta

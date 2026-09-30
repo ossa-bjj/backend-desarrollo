@@ -12,6 +12,7 @@ import {
   establecerImagenPrincipalServicio,
   eliminarServicio,
 } from './servicio.controller';
+import { actualizarEstadoSolicitud, crearSolicitudDeServicio, getSolicitudes } from './solicitud.controller';
 import { isAuth, isAdmin } from '../shared/auth.middleware';
 import upload from '../shared/file.middleware';
 
@@ -22,7 +23,12 @@ const router = Router();
 router.get('/', getServicios);
 router.get('/search', buscarServicios);
 router.get('/admin/all', isAuth, isAdmin, getServiciosAdmin);
+// Solicitudes de propuesta: la bandeja del admin va antes que /:codigoArticulo.
+router.get('/solicitudes', isAuth, isAdmin, getSolicitudes);
+router.patch('/solicitudes/:id', isAuth, isAdmin, actualizarEstadoSolicitud);
 router.get('/:codigoArticulo', getServicioPorCodigo);
+// Publica: la manda el formulario de «Solicitar propuesta» de cada servicio.
+router.post('/:codigoArticulo/solicitudes', crearSolicitudDeServicio);
 
 // --- RUTAS PROTEGIDAS ---
 router.post('/', isAuth, isAdmin, crearServicio);

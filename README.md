@@ -79,6 +79,9 @@ PAYPAL_ENTORNO=sandbox
 PAYPAL_WEBHOOK_ID=<webhook-id>
 RESEND_API_KEY=<api-key>
 CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
+CORREO_ACADEMIA=<correo-de-la-academia>
+TELEGRAM_BOT_TOKEN=<token-del-bot>
+TELEGRAM_CHAT_ID=<id-del-chat>
 ```
 
 | Variable           | Para qué sirve                                                                                                                                                                          |
@@ -89,14 +92,16 @@ CORREO_REMITENTE=OSSA BJJ <no-reply@tudominio.com>
 | `ALLOWED_ORIGINS`  | Qué webs pueden llamar a esta API (separadas por comas, admite `*` como comodín)                                                                                                        |
 | `STRIPE_*`         | Cobrar con tarjeta y con Bizum                                                                                                                                                          |
 | `PAYPAL_*`         | Cobrar con PayPal. `PAYPAL_ENTORNO=live` cobra de verdad; cualquier otro valor usa el sandbox. `PAYPAL_WEBHOOK_ID` verifica la firma de sus avisos: sin él el webhook se rechaza entero |
-| `RESEND_API_KEY`   | Enviar el correo de recuperación de contraseña                                                                                                                                          |
-| `CORREO_REMITENTE` | Remitente de ese correo, con el dominio verificado en Resend                                                                                                                            |
+| `RESEND_API_KEY`   | Enviar correo: recuperación de contraseña, «Crea tu cuenta» y avisos a la academia                                                                                                      |
+| `CORREO_REMITENTE` | Remitente de esos correos, con el dominio verificado en Resend (`onboarding@resend.dev` solo entrega a la cuenta dueña de Resend)                                                       |
+| `CORREO_ACADEMIA`  | Dónde recibe la academia los avisos: solicitudes de propuesta, reclamaciones y cobros que no se pudieron servir                                                                         |
+| `TELEGRAM_*`       | Los mismos avisos por Telegram: token del bot (@BotFather) e id del chat o grupo de la academia                                                                                         |
 
 > [!NOTE]
-> Las de Stripe, PayPal y correo **no se comprueban al arrancar**: el servidor funciona
-> sin ellas. Sin las de pago, lo único que falla —con un mensaje claro— es intentar
-> cobrar. Sin las de correo, la recuperación de contraseña responde con normalidad pero
-> el correo no sale, y queda avisado en el log.
+> Las de Stripe, PayPal, correo y Telegram **no se comprueban al arrancar**: el servidor
+> funciona sin ellas. Sin las de pago, lo único que falla —con un mensaje claro— es intentar
+> cobrar. Sin las de correo o Telegram, todo responde con normalidad pero ese correo o ese
+> aviso no sale, y queda avisado en el log.
 
 > [!IMPORTANT]
 > **Bizum se cobra a través de Stripe**, no es una pasarela aparte y no tiene variables
