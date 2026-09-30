@@ -310,6 +310,16 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Las dos, texto: bcrypt lanza con cualquier otra cosa y saldria un 500.
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      return;
+    }
+    if (currentPassword !== undefined && typeof currentPassword !== 'string') {
+      res.status(400).json({ error: 'La contraseña actual debe ser texto' });
+      return;
+    }
+
     const user = await User.findById(id).select('+password');
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
@@ -332,8 +342,11 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
       // Sin hash guardado —una ficha de invitado— bcrypt lanzaria y saldria un
       // 500. No hay contrasena actual que pueda coincidir.
       const valid = user.password ? await bcrypt.compare(currentPassword, user.password) : false;
+      // 400 y no 401: la sesion es buena, lo que falla es un dato del
+      // formulario. Con un 401 el frontend cerraba la sesion de quien solo se
+      // habia equivocado al escribir su contrasena actual.
       if (!valid) {
-        res.status(401).json({ error: 'Contraseña actual incorrecta' });
+        res.status(400).json({ error: 'Contraseña actual incorrecta' });
         return;
       }
     }
