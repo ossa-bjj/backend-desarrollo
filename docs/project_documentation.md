@@ -312,6 +312,11 @@ Los middlewares `isAuth` / `isAdmin` protegen rutas enteras; `optionalAuth` rell
 `req.user` si hay token y deja pasar si no, y lo usa `/api/disponibilidad` para
 devolver más información a un admin que a un visitante.
 
+**Una cuenta bloqueada pierde la sesión en la petición siguiente.** El login ya no la deja
+entrar, pero el token dura ocho horas: `isAuth` comprueba en cada petición protegida si la
+cuenta está `baneado` (una consulta por clave primaria) y responde `401 Esta cuenta está
+bloqueada`, que el frontend trata como sesión cerrada. `optionalAuth` la trata como anónima.
+
 ### 5.7 Noticias
 
 Una noticia **nace siempre como borrador** (`publicada: false`) y no aparece en el
@@ -723,7 +728,7 @@ npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier -
 
 ### Comprobación automática
 
-**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 181 en 16 ficheros.
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 185 en 17 ficheros.
 Cubren el **cobro con Stripe** de punta a punta —arrancarlo, los avisos que devuelve Stripe y
 la devolución del dinero— y la **compra sin cuenta**: el alta, la ficha, la clave, los
 horarios, los frenos y la conversión de la ficha en cuenta.
@@ -754,6 +759,8 @@ test/
 │   │                                cobrables y qué se le pide a Stripe
 │   ├── reembolso-desde-panel.test.ts  Cancelar un pedido cobrado devuelve el dinero
 │   └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
+├── auth/
+│   └── cuenta-bloqueada.test.ts Sesión de una cuenta bloqueada y cambio de contraseña
 ├── solicitudes/
 │   └── solicitudes.test.ts      Formulario de propuesta y bandeja del admin
 ├── avisos/
@@ -1113,7 +1120,7 @@ suceso.
 **El registro exige `profile` en el cuerpo de la petición**, con el nombre y los apellidos
 dentro. Sin él responde `400 Datos no validos: profile`.
 
-**Hay tests automáticos del cobro con Stripe, de la compra sin cuenta, de las solicitudes y de los avisos** (181, ver
+**Hay tests automáticos del cobro con Stripe, de la compra sin cuenta, de las solicitudes y de los avisos** (185, ver
 [Tests](#11-tests)), además de la verificación estática: tipos, linter y formato. El resto se
 comprueba a mano contra el servidor levantado.
 
@@ -1231,7 +1238,7 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 - [ ] **El panel no puede borrar un pedido.** `DELETE /api/pedidos/:id` existe y es de
       admin, pero el frontend no tiene la llamada. Es coherente con la política —un pedido
       se cancela, no se borra—, así que solo se anota. — `src/orders/order.routes.ts`
-- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 181 (Vitest +
+- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 185 (Vitest +
       Supertest + MongoDB en memoria). No hay ninguno del alta de pedidos con cuenta, de la
       confirmación de presupuestos, del resto de usuarios, catálogo, disponibilidad ni del
       cobro con PayPal. — `test/`
@@ -1243,6 +1250,10 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 - [x] **A la academia no le llegaba ningún aviso.** Solicitudes, reclamaciones y cobros que
       no se pudieron servir avisan por Telegram y correo, cada canal opcional.
       — `src/shared/avisos.ts`
+- [x] **Una cuenta bloqueada seguía operando con su sesión** hasta 8 horas. `isAuth` lo
+      comprueba en cada petición. — `src/shared/auth.middleware.ts`
+- [x] **Equivocarse con la contraseña actual respondía 401**, y el frontend cerraba la sesión.
+      Ahora es un 400. — `src/users/user.controller.ts` (`updatePassword`)
 - [x] **`/register` dejaba asignarse cuota, pagos de cuota y ficha de cliente.** Solo admite
       usuario, correo, contraseña y perfil básico. — `src/users/auth.controller.ts`
 
