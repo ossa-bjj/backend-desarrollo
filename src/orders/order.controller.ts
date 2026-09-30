@@ -26,6 +26,7 @@ import {
   sinPermiso,
 } from '../shared/controller.utils';
 import { redondearEuros } from '../shared/dinero';
+import { leerDireccionEnvio } from './invitado.service';
 
 // Ajuste que el admin aplica a una linea al confirmar el presupuesto.
 interface AjusteLinea {
@@ -99,9 +100,24 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     const { items, shippingAddress, user } = req.body;
     const userId = esAdmin(req) && user ? user : req.user!.id;
 
+    // La misma lectura que en la compra sin cuenta: entera o ninguna, y solo
+    // texto. Antes se guardaba el cuerpo tal cual llegaba.
+    const direccion = leerDireccionEnvio(shippingAddress);
+    if (!direccion.ok) {
+      peticionInvalida(res, direccion.error);
+      return;
+    }
+
     const preparado = await prepararPedido(items);
     if (!preparado.ok) {
       res.status(preparado.estado).json({ error: preparado.error });
+      return;
+    }
+
+    // Un producto hay que mandarlo a algun sitio. Antes un pedido con camisetas
+    // podia crearse y cobrarse sin direccion de envio.
+    if (preparado.items.some((item) => item.tipo === OrderItemTipo.PRODUCTO) && !direccion.valor) {
+      peticionInvalida(res, 'Falta la dirección de envío');
       return;
     }
 
@@ -109,7 +125,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       user: userId,
       items: preparado.items,
       total: preparado.total,
-      shippingAddress,
+      shippingAddress: direccion.valor,
       status: preparado.necesitaConfirmacion ? OrderStatus.PENDIENTE_CONFIRMACION : OrderStatus.PENDIENTE,
     }).save();
 

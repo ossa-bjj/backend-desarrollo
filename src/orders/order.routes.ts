@@ -13,6 +13,7 @@ import {
   capturarPago,
   iniciarPagoInvitado,
   capturarPagoInvitado,
+  cancelarPedidoPropio,
   stripeWebhook,
   paypalWebhook,
 } from '../payments/pago.controller';
@@ -44,6 +45,8 @@ router.post('/:id/pago/iniciar', isAuth, iniciarPago);
 // La vuelta del cliente al sitio: el otro camino por el que se cierra un pago
 // de PayPal. Los dos son idempotentes y pueden llegar en cualquier orden.
 router.post('/:id/pago/capturar', isAuth, capturarPago);
+// El dueño abandona su pedido sin pagar y suelta sus horarios.
+router.post('/:id/cancelar', isAuth, cancelarPedidoPropio);
 
 router.get('/', isAuth, getOrders);
 router.post('/', isAuth, createOrder);
