@@ -14,7 +14,14 @@ import type Stripe from 'stripe';
 import type { IOrder } from '../orders/order.model';
 import { Order, OrderStatus, OrderItemTipo, ESTADOS_NO_PAGABLES } from '../orders/order.model';
 import { descontarStockDeTalla } from '../products/producto.service';
-import { consolidarSlotsDePedido } from '../availability/disponibilidad.service';
+import {
+  consolidarHorariosAlCobrar,
+  horasDeRetencion,
+  limiteDeRetencion,
+  renovarRetencionParaCobrar,
+} from '../availability/disponibilidad.service';
+import { horariosDelPedido } from '../orders/order.service';
+import { marcarFichaComoCliente } from '../users/ficha-invitado.service';
 import { esOrigenPermitido } from '../shared/cors';
 import { aCentimos } from '../shared/dinero';
 import { getStripe, MONEDA, esReutilizable } from './stripe.utils';
@@ -137,6 +144,9 @@ export const iniciarConStripe = async (order: Pedido, metodo: 'stripe' | 'bizum'
     metadata: {
       orderId: String(order._id),
       usuario: String(order.user),
+      // En un pedido de invitado se anota su correo: es lo que permite
+      // reconocer el cobro buscando en el panel de Stripe.
+      ...(order.invitado ? { invitado: order.invitado.email } : {}),
     },
     payment_method_types: TIPOS_DE_STRIPE[metodo],
   });
@@ -366,7 +376,23 @@ export const marcarPagado = async (
   await order.save();
 
   // La reserva deja de caducar y el stock baja solo cuando hay dinero de verdad.
-  await consolidarSlotsDePedido(order._id);
+  // Si el cobro llega tarde y algun hueco ya es de otro, se anota: el dinero
+  // esta cobrado y el horario no, y eso tiene que verse en el panel.
+  const { perdidos } = await consolidarHorariosAlCobrar(order._id, horariosDelPedido(order));
+  if (perdidos.length > 0) {
+    console.error(`Pedido ${String(order._id)} cobrado sin su horario: ${perdidos.join(', ')}`);
+    order.incidenciasHorario = perdidos.map((slotId) => ({
+      slotId,
+      slotLabel: order.items.find((item) => item.slotId === slotId)?.slotLabel,
+      detectadaEn: new Date(),
+    }));
+    await order.save();
+  }
+
+  // Quien compro sin cuenta pasa a figurar como cliente en su ficha: la ficha
+  // se creo con el pedido, antes de pagar, y sin esto el panel no distingue a
+  // quien pago de quien dejo el carrito a medias.
+  if (order.invitado) await marcarFichaComoCliente(order.user);
 
   // Lo que no se pudo servir queda anotado en el pedido, para que el panel lo
   // enseñe. Se guarda despues de marcar PAGADO a proposito: el cobro es un
@@ -376,6 +402,73 @@ export const marcarPagado = async (
     order.incidenciasStock = incidencias;
     await order.save();
   }
+};
+
+/**
+ * Anula lo que haya a medio cobrar de un pedido que se va a cancelar.
+ *
+ * Con Stripe hay que cancelar el intento: si se dejara vivo, el cliente podria
+ * terminar de pagarlo desde una pestaña vieja y el webhook cobraria un pedido
+ * cancelado. Si el intento ya esta cobrado o en marcha (un Bizum pendiente de
+ * su banco), no se cancela nada: el dinero va a llegar o ya llego.
+ *
+ * PayPal no necesita nada: una orden aprobada no mueve dinero hasta que se
+ * captura, y `cerrarPagoDePayPal` no captura un pedido cancelado.
+ */
+export const anularCobroEnCurso = async (
+  order: Pedido,
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const { proveedor, paymentIntentId } = order.pago ?? {};
+  if (!paymentIntentId || (proveedor !== 'stripe' && proveedor !== 'bizum')) return { ok: true };
+
+  const stripe = getStripe();
+  let intento: Stripe.PaymentIntent;
+  try {
+    intento = await stripe.paymentIntents.retrieve(paymentIntentId);
+  } catch {
+    // Un intento que Stripe ya no conoce no puede cobrar nada.
+    return { ok: true };
+  }
+
+  if (intento.status === 'succeeded' || intento.status === 'processing') {
+    return { ok: false, error: 'El pago de este pedido ya está en curso y no se puede cancelar' };
+  }
+  if (intento.status === 'canceled') return { ok: true };
+
+  await stripe.paymentIntents.cancel(intento.id);
+  return { ok: true };
+};
+
+/**
+ * Asegura los horarios de un pedido justo antes de mover dinero.
+ *
+ * Lo llaman los dos momentos en que se cobra: al arrancar el cobro (Stripe crea
+ * el intento, PayPal la orden) y al capturar PayPal, que es cuando de verdad se
+ * cobra y puede llegar mucho despues. Renueva lo que sigue siendo del pedido,
+ * recupera lo que se solto y sigue libre, y nunca pasa del tope de retencion
+ * del pedido. Si algo se ha perdido, no se debe cobrar.
+ */
+export const asegurarHorariosParaCobrar = async (
+  order: Pedido,
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const esInvitado = Boolean(order.invitado);
+  const creadoEn = order.createdAt ?? new Date();
+
+  const { perdidos, plazoAgotado } = await renovarRetencionParaCobrar(
+    order._id,
+    horariosDelPedido(order),
+    horasDeRetencion(esInvitado),
+    limiteDeRetencion(creadoEn, esInvitado),
+  );
+
+  if (perdidos.length === 0) return { ok: true };
+
+  return {
+    ok: false,
+    error: plazoAgotado
+      ? 'El plazo para pagar este pedido ha terminado y su horario ya no está reservado. Haz un pedido nuevo.'
+      : 'El horario que elegiste ya no está disponible. Haz un pedido nuevo eligiendo otra hora.',
+  };
 };
 
 /**
@@ -396,6 +489,18 @@ export const cerrarPagoDePayPal = async (
   if (order.pago?.proveedor !== 'paypal' || !order.pago.paymentIntentId) {
     return { ok: false, estado: 409, error: 'Este pedido no tiene un pago de PayPal que capturar' };
   }
+
+  // Un pedido cancelado despues de aprobar en PayPal no se cobra: capturar es
+  // lo que mueve el dinero, y aqui es donde hay que cortarlo.
+  if (ESTADOS_NO_PAGABLES.includes(order.status)) {
+    return { ok: false, estado: 409, error: `No se puede cobrar un pedido en estado "${order.status}"` };
+  }
+
+  // La aprobacion en PayPal puede llegar mucho despues de arrancar el cobro.
+  // Si entre medias el horario se ha ido, no se captura: la orden de PayPal
+  // caduca sola sin cobrar nada, que es mejor que cobrar un hueco vendido.
+  const horarios = await asegurarHorariosParaCobrar(order);
+  if (!horarios.ok) return { ok: false, estado: 409, error: horarios.error };
 
   const captura = await capturarOrdenPayPal(order.pago.paymentIntentId);
 

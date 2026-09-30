@@ -78,3 +78,23 @@ export const enviarCorreoDeRecuperacion = (para: string, enlace: string): Promis
       <p>El enlace caduca en una hora. Si no has sido tú, ignora este correo.</p>
     `,
   });
+
+/**
+ * Correo para convertir en cuenta la ficha de quien compro sin ella.
+ *
+ * Sale por el mismo camino que la recuperacion —"olvide mi contrasena"— y lleva
+ * el mismo tipo de enlace, pero no se puede decir "recupera tu contrasena" a
+ * quien nunca tuvo una. Abrir el enlace es lo que demuestra que el correo es
+ * suyo: hasta entonces, cualquiera pudo haber comprado escribiendolo.
+ */
+export const enviarCorreoDeActivacion = (para: string, enlace: string): Promise<boolean> =>
+  enviarCorreo({
+    para,
+    asunto: 'Crea tu cuenta',
+    html: `
+      <p>Con este correo se ha comprado en la tienda sin crear cuenta. Para tener una, elige una contraseña.</p>
+      <p><a href="${enlace}">Crear mi cuenta</a></p>
+      <p>Tu usuario para entrar será este mismo correo. El enlace caduca en una hora.</p>
+      <p>Si no has sido tú, ignora este correo: sin abrir el enlace no se crea nada.</p>
+    `,
+  });

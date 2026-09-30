@@ -47,6 +47,7 @@ export const stripeSimulado = {
       status: 'requires_payment_method',
       amount: params.amount,
     })),
+    cancel: vi.fn(async (id: string) => ({ id, status: 'canceled' })),
   },
   refunds: {
     create: vi.fn(async (_params: { payment_intent: string }) => ({

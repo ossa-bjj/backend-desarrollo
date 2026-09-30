@@ -7,6 +7,13 @@ export enum UserRole {
   USER = 'user',
   ADMIN = 'admin',
   PREMIUM = 'premium',
+  /**
+   * Ficha de quien compra sin cuenta. No tiene contrasena ni puede iniciar
+   * sesion: existe para que sus datos y sus pedidos queden a nombre de una
+   * persona, no para darle acceso. La crea el alta de pedido de invitado
+   * (`users/ficha-invitado.service.ts`).
+   */
+  INVITADO = 'invitado',
 }
 
 export enum UserStatus {
@@ -224,7 +231,17 @@ const userSchema = new Schema<IUser>(
     },
     password: {
       type: String,
-      required: [true, 'La contraseña es obligatoria'],
+      // Una ficha de invitado no tiene contrasena a proposito: no se genera
+      // ninguna, porque no habria donde guardarla ni forma de entregarla, y sin
+      // ella nadie puede entrar con esa ficha. En una actualizacion `this` es la
+      // consulta y no trae el rol: ahi la regla solo se aplica si se toca la
+      // contrasena, que es cuando tiene sentido.
+      required: [
+        function (this: { role?: UserRole }) {
+          return this.role !== UserRole.INVITADO;
+        },
+        'La contraseña es obligatoria',
+      ],
       minlength: [6, 'La contraseña debe tener al menos 6 caracteres'],
     },
     role: { type: String, enum: Object.values(UserRole), default: UserRole.USER },

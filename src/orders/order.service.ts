@@ -9,6 +9,7 @@ import { esCodigoDeServicio } from '../services/servicio.service';
 import { normalizarUrlMedia } from '../shared/r2.utils';
 import { redondearEuros } from '../shared/dinero';
 import { leerPaginacion, textoDeQuery } from '../shared/consulta.utils';
+import { retenerSlots, liberarSlotsDePedido, horasDeRetencion } from '../availability/disponibilidad.service';
 
 /**
  * Seleccion, filtrado y paginacion del historial de pedidos.
@@ -34,6 +35,13 @@ export interface CriteriosPedido {
    * `?usuario=` sirva para leer los pedidos de otro.
    */
   usuario?: string;
+  /**
+   * Deja fuera los pedidos hechos sin cuenta. Se fija para quien no es admin:
+   * esos pedidos se abren con su clave, nunca con una sesion. Aunque su ficha
+   * acabe convertida en cuenta, cualquiera pudo comprar escribiendo ese correo,
+   * y el titular veria los datos de otra persona.
+   */
+  soloConCuenta: boolean;
   status?: OrderStatus;
   desde?: Date;
   hasta?: Date;
@@ -108,6 +116,7 @@ export const leerCriteriosPedido = (
     ok: true,
     criterios: {
       usuario: esAdmin ? usuarioPedido : usuarioAutenticado,
+      soloConCuenta: !esAdmin,
       status,
       desde,
       hasta,
@@ -121,6 +130,7 @@ const construirFiltro = (criterios: CriteriosPedido): FilterQuery<IOrder> => {
   const filtro: FilterQuery<IOrder> = {};
 
   if (criterios.usuario) filtro.user = new Types.ObjectId(criterios.usuario);
+  if (criterios.soloConCuenta) filtro.invitado = { $exists: false };
   if (criterios.status) filtro.status = criterios.status;
 
   // `hasta` es un dia, no un instante: se incluye entero sumandole 24 horas,
@@ -271,6 +281,12 @@ export const prepararPedido = async (entrada: unknown): Promise<PedidoPreparado>
     return { ok: false, estado: 400, error: 'El pedido debe incluir al menos una línea' };
   }
 
+  // Cada linea tiene que ser un objeto: un `null` en la lista reventaba al leer
+  // `codigoArticulo` y salia como un 500 en una ruta publica.
+  if (entrada.some((linea) => typeof linea !== 'object' || linea === null || Array.isArray(linea))) {
+    return { ok: false, estado: 400, error: 'Línea de pedido no válida' };
+  }
+
   const lineas = entrada as LineaPedidoInput[];
 
   // --- Validacion de forma antes de tocar la base de datos ---
@@ -383,4 +399,34 @@ export const prepararPedido = async (entrada: unknown): Promise<PedidoPreparado>
   const necesitaConfirmacion = lineas.some((_, i) => catalogo.get(codigos[i])?.requiereConfirmacion);
 
   return { ok: true, items, total: redondearEuros(total), necesitaConfirmacion };
+};
+
+/** Los huecos de agenda que reservan las lineas de un pedido. */
+export const horariosDelPedido = (order: Pick<IOrder, 'items'>): string[] =>
+  order.items.map((item) => item.slotId).filter((id): id is string => typeof id === 'string');
+
+/** Respuesta cuando otro cliente se ha llevado un horario mientras se creaba el pedido. */
+export const HORARIO_OCUPADO = 'Alguno de los horarios elegidos ya no está disponible. Vuelve a elegir hora.';
+
+/**
+ * Retiene los horarios de un pedido recien guardado.
+ *
+ * Si otro cliente se llevo alguno entre medias, suelta los que si se retuvieron
+ * y borra el pedido: venderlo sin su horario seria venderlo dos veces. Devuelve
+ * `false` en ese caso, y quien llama responde el conflicto.
+ *
+ * La comparten el alta con cuenta y la de invitado: si cada una retuviera a su
+ * manera, acabarian divergiendo en el caso raro, que es justo el que importa.
+ */
+export const retenerHorariosDelPedido = async (order: HydratedDocument<IOrder>): Promise<boolean> => {
+  const slotIds = horariosDelPedido(order);
+
+  if (slotIds.length === 0) return true;
+
+  const { ocupados } = await retenerSlots(order._id, slotIds, horasDeRetencion(Boolean(order.invitado)));
+  if (ocupados.length === 0) return true;
+
+  await liberarSlotsDePedido(order._id);
+  await order.deleteOne();
+  return false;
 };

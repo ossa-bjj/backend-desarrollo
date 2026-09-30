@@ -79,7 +79,10 @@ export const corsOptions: CorsOptions = {
     callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  // `X-Clave-Pedido` es la credencial de la compra sin cuenta
+  // (`orders/invitado.service.ts`). Sin ella aqui, el navegador corta la
+  // peticion en el preflight y el invitado no puede pagar.
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Clave-Pedido'],
   credentials: true,
   optionsSuccessStatus: 204,
 };
