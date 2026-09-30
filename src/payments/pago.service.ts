@@ -17,6 +17,7 @@ import { descontarStockDeTalla } from '../products/producto.service';
 import {
   consolidarHorariosAlCobrar,
   horasDeRetencion,
+  liberarSlotsDePedido,
   limiteDeRetencion,
   renovarRetencionParaCobrar,
 } from '../availability/disponibilidad.service';
@@ -494,6 +495,38 @@ export const anularCobroEnCurso = async (
   if (intento.status === 'canceled') return { ok: true };
 
   await stripe.paymentIntents.cancel(intento.id);
+  return { ok: true };
+};
+
+/** Estados que su dueño puede cancelar por su cuenta: todavia no se ha cobrado nada. */
+const CANCELABLES_SIN_PAGAR: OrderStatus[] = [OrderStatus.PENDIENTE, OrderStatus.PENDIENTE_CONFIRMACION];
+
+/**
+ * Cancela un pedido que no se ha pagado y suelta sus horarios.
+ *
+ * La usan el invitado (con su clave) y el cliente con cuenta (con su sesion)
+ * cuando abandonan un pedido: cambian el carrito, corrigen datos o vuelven
+ * atras. Sin esto el pedido abandonado seguia reteniendo sus horarios, y el
+ * siguiente intento del mismo cliente chocaba con su propia retencion.
+ *
+ * Idempotente: un pedido ya cancelado responde bien. Lo pagado no se cancela
+ * por aqui: eso lo hace el admin, que es quien devuelve el dinero.
+ */
+export const cancelarPedidoSinPagar = async (
+  order: Pedido,
+): Promise<{ ok: true } | { ok: false; estado: number; error: string }> => {
+  if (order.status === OrderStatus.CANCELADO) return { ok: true };
+
+  if (!CANCELABLES_SIN_PAGAR.includes(order.status) || order.pago?.pagadoEn) {
+    return { ok: false, estado: 409, error: 'Este pedido ya no se puede cancelar' };
+  }
+
+  const anulado = await anularCobroEnCurso(order);
+  if (!anulado.ok) return { ok: false, estado: 409, error: anulado.error };
+
+  order.status = OrderStatus.CANCELADO;
+  await order.save();
+  await liberarSlotsDePedido(order._id);
   return { ok: true };
 };
 

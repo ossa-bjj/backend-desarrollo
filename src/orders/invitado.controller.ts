@@ -8,8 +8,7 @@ import {
   leerDatosInvitado,
   leerDireccionEnvio,
 } from './invitado.service';
-import { anularCobroEnCurso, type Pedido } from '../payments/pago.service';
-import { liberarSlotsDePedido } from '../availability/disponibilidad.service';
+import { cancelarPedidoSinPagar, type Pedido } from '../payments/pago.service';
 import { anadirDireccionAFicha, obtenerFichaDeInvitado } from '../users/ficha-invitado.service';
 import { claveIp, segundosHasta, superaLimiteDeUso } from '../users/acceso.service';
 import {
@@ -196,28 +195,11 @@ export const cancelGuestOrder = async (req: Request, res: Response): Promise<voi
     const order = await cargarPedidoDeInvitado(req, res);
     if (!order) return;
 
-    // Idempotente: el frontend puede repetirlo al recargar.
-    if (order.status === OrderStatus.CANCELADO) {
-      res.status(200).json({ success: true, data: order });
+    const resultado = await cancelarPedidoSinPagar(order);
+    if (!resultado.ok) {
+      res.status(resultado.estado).json({ error: resultado.error });
       return;
     }
-
-    // Solo lo que esta por pagar. Lo pagado se cancela desde el panel, que es
-    // quien devuelve el dinero.
-    if (order.status !== OrderStatus.PENDIENTE || order.pago?.pagadoEn) {
-      conflicto(res, 'Este pedido ya no se puede cancelar');
-      return;
-    }
-
-    const anulado = await anularCobroEnCurso(order);
-    if (!anulado.ok) {
-      conflicto(res, anulado.error);
-      return;
-    }
-
-    order.status = OrderStatus.CANCELADO;
-    await order.save();
-    await liberarSlotsDePedido(order._id);
 
     res.status(200).json({ success: true, data: order });
   } catch (error) {

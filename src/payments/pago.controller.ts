@@ -23,6 +23,7 @@ import { firmaDeWebhookEsValida } from './paypal.utils';
 import {
   anotarEstadoDelIntento,
   asegurarHorariosParaCobrar,
+  cancelarPedidoSinPagar,
   cerrarPagoDePayPal,
   esMetodoValido,
   iniciarConPayPal,
@@ -169,6 +170,26 @@ export const capturarPago = async (req: Request, res: Response): Promise<void> =
     if (order) await capturarCobro(order, res);
   } catch (error) {
     sendServerError(res, 'Error capturando el pago', error);
+  }
+};
+
+// POST /api/pedidos/:id/cancelar
+// El cliente abandona su pedido sin pagar —vuelve al carrito, lo cambia— y
+// suelta sus horarios. Lo pagado lo cancela el admin, que devuelve el dinero.
+export const cancelarPedidoPropio = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await cargarPedidoPropio(req, res);
+    if (!order) return;
+
+    const resultado = await cancelarPedidoSinPagar(order);
+    if (!resultado.ok) {
+      res.status(resultado.estado).json({ error: resultado.error });
+      return;
+    }
+
+    res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    sendServerError(res, 'Error cancelando el pedido', error);
   }
 };
 
