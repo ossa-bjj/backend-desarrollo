@@ -30,11 +30,27 @@ const VIGENCIA_ENLACE_MS = 3_600_000;
  */
 const esTexto = (valor: unknown): valor is string => typeof valor === 'string' && valor.length > 0;
 
+/**
+ * El perfil que se admite en el registro, campo a campo. Copiar el objeto tal
+ * cual dejaria colar cualquier otra cosa que el esquema acepte dentro de el.
+ */
+const perfilDeRegistro = (entrada: unknown) => {
+  const perfil = (entrada ?? {}) as Record<string, unknown>;
+  return {
+    firstName: perfil.firstName,
+    lastName: perfil.lastName,
+    phone: perfil.phone,
+    addresses: perfil.addresses,
+  };
+};
+
 // POST /api/users/register
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { username, email, password, profile, customer, sportsProfile, membership, membershipPayments } =
-      req.body;
+    // Solo lo que una persona puede decir de si misma al registrarse. Cliente,
+    // perfil deportivo, cuota y pagos de cuota los fija el admin: antes se
+    // copiaban del cuerpo, y cualquiera podia darse de alta con la cuota activa.
+    const { username, email, password, profile } = req.body;
 
     if (!esTexto(username) || !esTexto(email) || !esTexto(password)) {
       res.status(400).json({ error: 'Usuario, email y contraseña son obligatorios' });
@@ -53,16 +69,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const user = await new User({
-      username,
-      email,
-      password,
-      profile,
-      customer,
-      sportsProfile,
-      membership,
-      membershipPayments,
-    }).save();
+    const user = await new User({ username, email, password, profile: perfilDeRegistro(profile) }).save();
 
     res.status(201).json({ success: true, data: user });
   } catch (error) {

@@ -287,6 +287,32 @@ describe('acceso · solo texto en las rutas públicas', () => {
     expect(respuesta.status).toBe(400);
   });
 
+  it('el registro ignora cuota, pagos de cuota, cliente y perfil deportivo', async () => {
+    const respuesta = await request(app)
+      .post('/api/users/register')
+      .send({
+        username: 'nuevo',
+        email: 'nuevo@ejemplo.com',
+        password: 'secreta123',
+        profile: { firstName: 'N', lastName: 'Uevo', avatarUrl: 'https://otro.test/x.png' },
+        membership: { status: 'active', monthlyFee: 0 },
+        membershipPayments: [{ period: '2026-09', amount: 0, status: 'paid', dueDate: '2026-09-01' }],
+        customer: { isCustomer: true, origin: 'athlete' },
+        sportsProfile: { isAthlete: true, isFederated: false },
+        role: 'admin',
+      });
+
+    expect(respuesta.status).toBe(201);
+    const { User } = await modeloUsuario();
+    const creado = await User.findOne({ username: 'nuevo' });
+    expect(creado!.role).toBe('user');
+    expect(creado!.membership.status).toBe('inactive');
+    expect(creado!.membershipPayments).toHaveLength(0);
+    expect(creado!.customer.isCustomer).toBe(false);
+    expect(creado!.sportsProfile).toBeUndefined();
+    expect(creado!.profile.avatarUrl).not.toBe('https://otro.test/x.png');
+  });
+
   it('el registro no admite un nombre de usuario con @', async () => {
     const respuesta = await request(app)
       .post('/api/users/register')
