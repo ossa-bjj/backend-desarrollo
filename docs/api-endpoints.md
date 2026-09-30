@@ -249,6 +249,35 @@ Los servicios comparten el espacio de `codigoArticulo` con los productos, en el 
 Campos propios: `modalidad` (`presencial` · `online` · `mixta`), `duracion` en minutos,
 `plazas` por sesión, `requiereReserva` y `requiereConfirmacion`.
 
+### Solicitudes de propuesta
+
+El formulario de «Solicitar propuesta» de un servicio: una academia pide un seminario o un
+servicio a medida. No es un pedido —no tiene precio ni se cobra—: se guarda y se avisa a la
+academia (ver [Avisos a la academia](#avisos-a-la-academia)).
+
+| Método | Ruta                           | Acceso  | Descripción                                                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/:codigoArticulo/solicitudes` | Público | Envía una solicitud. Cuerpo: `academia`, `ciudad`, `alumnos`, `fechas`, `contacto` (obligatorios, texto con tope de longitud) y `mensaje` (opcional). Responde `201 { message }` sin devolver lo guardado. `404` si el servicio no existe o está desactivado. `429` con `Retry-After` pasadas 5 solicitudes por IP y hora. |
+| GET    | `/solicitudes`                 | Admin   | Lista las solicitudes, más recientes primero. Filtro `?estado=` (`nueva` · `respondida` · `descartada`).                                                                                                                                                                                                                   |
+| PATCH  | `/solicitudes/:id`             | Admin   | Cambia el estado. Cuerpo: `{ estado }`.                                                                                                                                                                                                                                                                                    |
+
+## Avisos a la academia
+
+Tres sucesos avisan a la academia sin esperar a que entre al panel: una **solicitud de
+propuesta**, una **reclamación** de un cobro a su banco (al abrirse y al cerrarse) y un
+**cobro que no se pudo servir entero** (sin existencias o sin horario). Salen por dos
+canales, y cada uno es opcional:
+
+| Canal    | Variables                                                           |
+| -------- | ------------------------------------------------------------------- |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`                            |
+| Correo   | `CORREO_ACADEMIA` (con el remitente de siempre, `CORREO_REMITENTE`) |
+
+Un canal sin configurar o caído no afecta al otro ni al flujo que avisa: el aviso no sale y
+queda en el log. El suceso ya está guardado —la solicitud en su colección, la reclamación y la
+incidencia en el pedido—, así que perder un aviso no pierde el dato. Lo que escribe un
+visitante llega escapado. Vive en `src/shared/avisos.ts`.
+
 ## Noticias (`/noticias`)
 
 Una noticia nace siempre como **borrador**: `publicada` es `false` y no aparece en el

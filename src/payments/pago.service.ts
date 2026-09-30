@@ -22,6 +22,8 @@ import {
 } from '../availability/disponibilidad.service';
 import { horariosDelPedido } from '../orders/order.service';
 import { marcarFichaComoCliente } from '../users/ficha-invitado.service';
+import { User } from '../users/user.model';
+import { avisarALaAcademia, referenciaDePedido } from '../shared/avisos';
 import { esOrigenPermitido } from '../shared/cors';
 import { aCentimos } from '../shared/dinero';
 import { getStripe, MONEDA, esReutilizable } from './stripe.utils';
@@ -259,6 +261,10 @@ export const registrarDisputa = async (
   const anterior = order.pago?.disputa;
   if (anterior?.id === disputa.id && anterior.estado === disputa.estado) return;
 
+  // Se lee ya: `anterior` es el subdocumento de Mongoose, y `order.set` de mas
+  // abajo lo reescribe en el sitio. Despues ya tendria el id nuevo.
+  const esNueva = anterior?.id !== disputa.id;
+
   // Por ruta y no reconstruyendo `pago` entero: lo que ya hay ahi —el cobro, un
   // reembolso anterior— tiene que seguir estando.
   order.set('pago.disputa', {
@@ -272,13 +278,44 @@ export const registrarDisputa = async (
 
   await order.save();
 
-  // El log es la unica alarma que hay hoy. Mientras no haya aviso por correo,
-  // esto es lo que queda si nadie entra al panel.
   if (!disputa.cerrada) {
     console.error(
       `RECLAMACION abierta sobre el pedido ${String(order._id)} (${disputa.id}, ${disputa.estado}): hay un plazo para responder con pruebas`,
     );
   }
+
+  // Se avisa al abrirse y al cerrarse, no en cada cambio intermedio: lo urgente
+  // es enterarse de que hay plazo corriendo, y despues, de como acabo.
+  if (!esNueva && !disputa.cerrada) return;
+
+  await avisarALaAcademia({
+    titulo: disputa.cerrada
+      ? `Reclamación cerrada (${disputa.estado}) en el pedido ${referenciaDePedido(order._id)}`
+      : `Reclamación abierta en el pedido ${referenciaDePedido(order._id)}`,
+    datos: [
+      ['Pedido', referenciaDePedido(order._id)],
+      ['Cliente', await contactoDelPedido(order)],
+      ['Importe reclamado', `${(disputa.importeEnCentimos / 100).toFixed(2)} €`],
+      ['Motivo', disputa.motivo],
+      ['Estado en Stripe', disputa.estado],
+    ],
+    accion: disputa.cerrada
+      ? undefined
+      : 'Hay un plazo para responder con pruebas en el panel de Stripe; pasado ese plazo se pierde.',
+  });
+};
+
+/**
+ * A quien corresponde un pedido, en una linea: la copia de contacto si se
+ * hizo sin cuenta, o el usuario y el correo de la cuenta.
+ */
+const contactoDelPedido = async (order: Pedido): Promise<string> => {
+  if (order.invitado) {
+    const { firstName, lastName, email, phone } = order.invitado;
+    return `${firstName} ${lastName} · ${email} · ${phone} (sin cuenta)`;
+  }
+  const usuario = await User.findById(order.user).select('username email');
+  return usuario ? `${usuario.username} · ${usuario.email}` : 'Usuario eliminado';
 };
 
 /** Linea que se cobro sin que quedaran existencias de su talla. */
@@ -401,6 +438,27 @@ export const marcarPagado = async (
   if (incidencias.length > 0) {
     order.incidenciasStock = incidencias;
     await order.save();
+  }
+
+  // Un solo aviso con todo lo que no se pudo servir de este cobro: el dinero ya
+  // esta cobrado, y alguien tiene que reponer, recolocar o devolver.
+  if (perdidos.length > 0 || incidencias.length > 0) {
+    const sinHorario = order.incidenciasHorario?.map((i) => i.slotLabel ?? `horario ${i.slotId}`) ?? [];
+    const sinStock = incidencias.map(
+      (i) => `artículo ${i.codigoArticulo}${i.talla ? ` talla ${i.talla}` : ''} ×${i.solicitadas}`,
+    );
+
+    await avisarALaAcademia({
+      titulo: `Pedido ${referenciaDePedido(order._id)} cobrado sin poder servirse entero`,
+      datos: [
+        ['Pedido', referenciaDePedido(order._id)],
+        ['Cliente', await contactoDelPedido(order)],
+        ['Importe', `${order.total.toFixed(2)} €`],
+        ['Sin horario', sinHorario.join(', ') || undefined],
+        ['Sin existencias', sinStock.join(', ') || undefined],
+      ],
+      accion: 'Repón, ofrece otra hora o devuelve el importe desde el panel de Pedidos.',
+    });
   }
 };
 
