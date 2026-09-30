@@ -728,7 +728,7 @@ npm run verificar # tsc --noEmit -p tsconfig.test.json && eslint . && prettier -
 
 ### Comprobación automática
 
-**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 185 en 17 ficheros.
+**Vitest + Supertest + MongoDB en memoria.** Los tests viven en `test/`: 193 en 18 ficheros.
 Cubren el **cobro con Stripe** de punta a punta —arrancarlo, los avisos que devuelve Stripe y
 la devolución del dinero— y la **compra sin cuenta**: el alta, la ficha, la clave, los
 horarios, los frenos y la conversión de la ficha en cuenta.
@@ -761,6 +761,9 @@ test/
 │   └── importes.test.ts             Euros a céntimos, sin desviarse un céntimo
 ├── auth/
 │   └── cuenta-bloqueada.test.ts Sesión de una cuenta bloqueada y cambio de contraseña
+├── pedidos/
+│   └── pedido-con-cuenta.test.ts  Dirección obligatoria con productos y cancelar el
+│                                propio pedido sin pagar
 ├── solicitudes/
 │   └── solicitudes.test.ts      Formulario de propuesta y bandeja del admin
 ├── avisos/
@@ -1120,7 +1123,7 @@ suceso.
 **El registro exige `profile` en el cuerpo de la petición**, con el nombre y los apellidos
 dentro. Sin él responde `400 Datos no validos: profile`.
 
-**Hay tests automáticos del cobro con Stripe, de la compra sin cuenta, de las solicitudes y de los avisos** (185, ver
+**Hay tests automáticos del cobro con Stripe, de la compra sin cuenta, de las solicitudes y de los avisos** (193, ver
 [Tests](#11-tests)), además de la verificación estática: tipos, linter y formato. El resto se
 comprueba a mano contra el servidor levantado.
 
@@ -1226,11 +1229,6 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
       Los escribió la primera compra con ese correo, que casi siempre es del propio dueño,
       pero pudo ser otra persona. Se ven en el perfil y se pueden corregir; las direcciones sí
       se descartan. — `src/users/auth.controller.ts` (`resetPassword`)
-- [ ] **Los pedidos con cuenta siguen creándose al pulsar el método de pago.** Volver atrás
-      desde el formulario de la tarjeta y elegir otro método crea otro pedido que retiene sus
-      horarios. La compra sin cuenta ya no lo hace (crea el pedido una vez y lo cancela antes
-      de rehacerlo); el carrito con cuenta está igual que antes. — frontend,
-      `src/features/checkout/model/useCheckout.ts`
 - [ ] **Borrar una ficha deja sus pedidos apuntando a un id que ya no existe**, y la
       siguiente compra con ese correo crea otra ficha. El panel no se rompe —nombra el pedido
       por su copia de contacto—, pero el filtro `?usuario=` ya no los encuentra.
@@ -1238,12 +1236,18 @@ calidad: solo funcionalidad que falta o integraciones sin terminar.
 - [ ] **El panel no puede borrar un pedido.** `DELETE /api/pedidos/:id` existe y es de
       admin, pero el frontend no tiene la llamada. Es coherente con la política —un pedido
       se cancela, no se borra—, así que solo se anota. — `src/orders/order.routes.ts`
-- [ ] **Tests solo del cobro con Stripe y de la compra sin cuenta.** Hay 185 (Vitest +
-      Supertest + MongoDB en memoria). No hay ninguno del alta de pedidos con cuenta, de la
-      confirmación de presupuestos, del resto de usuarios, catálogo, disponibilidad ni del
-      cobro con PayPal. — `test/`
+- [ ] **Los tests no cubren todo.** Hay 193 (Vitest + Supertest + MongoDB en memoria). No hay
+      ninguno de la confirmación de presupuestos, del resto de usuarios, catálogo,
+      disponibilidad ni del cobro con PayPal. — `test/`
 
 ### Cerrados
+
+- [x] **Un pedido con productos se podía crear sin dirección de envío.** `POST /api/pedidos`
+      la exige entera si hay productos. — `src/orders/order.controller.ts`
+- [x] **El cliente no podía cancelar su propio pedido sin pagar**, y un pedido abandonado
+      retenía sus horarios. `POST /api/pedidos/:id/cancelar` lo cancela y los suelta; el
+      carrito lo usa al volver atrás, y ya no crea un pedido por intento de pago.
+      — `src/payments/pago.service.ts` (`cancelarPedidoSinPagar`)
 
 - [x] **El formulario de «Solicitar propuesta» no enviaba nada.** Ahora se guarda, el admin
       lo atiende en su bandeja y se avisa a la academia. — `src/services/solicitud.*`
